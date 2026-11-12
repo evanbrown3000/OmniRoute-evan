@@ -387,27 +387,35 @@ jobs:
               readState(value) + " " + extractText(value)
             );
             if (taskId && (pending(result) || !/COMPLETED|SUCCESS|SUCCEEDED|DONE/.test(state))) {
-              const waitSpec = toolSpecs.find(item => item.name === "wait_for_task");
-              if (waitSpec) {
-                const waitArgs = buildArgs(waitSpec, prompt, taskId);
+              waitedForTask = true;
+              for (let poll = 0; poll < 2; poll++) {
                 const waited = await rpc("tools/call", {
                   name: "wait_for_task",
-                  arguments: waitArgs
-                }, id + 100, 320000);
+                  arguments: { task_id: taskId, max_wait_seconds: 120 }
+                }, id + 100 + poll, 130000);
                 result = waited.parsed?.result ?? waited.parsed;
                 responseText = extractText(result);
-                state = readState(result) || responseText.match(/STATUS:\s*([A-Z_-]+)/i)?.[1]?.toUpperCase() || state;
-                waitedForTask = true;
+                state = readState(result) || responseText.match(/STATUS:\s*([A-Z_-]+)/i)?.[1]?.toUpperCase() || "";
+                const terminal = /^(COMPLETED|SUCCESS|SUCCEEDED|DONE|FAILED|ERROR|CANCELLED|TIMED_OUT)$/.test(state)
+                  || /STATUS:\s*(COMPLETED|SUCCESS|SUCCEEDED|DONE|FAILED|ERROR|CANCELLED|TIMED_OUT)/i.test(responseText);
+                const stillRunning = /RUNNING|IN_PROGRESS|QUEUED|PENDING|WAITING|INPUT_REQUIRED|STILL RUNNING/.test(
+                  state + " " + responseText.toUpperCase()
+                );
+                console.log("TASK_WAIT_POLL=" + JSON.stringify({
+                  name, taskId, poll: poll + 1, state, terminal, stillRunning,
+                  responseLength: responseText.length
+                }));
+                if (terminal || !stillRunning) break;
               }
             }
             const isPending = /RUNNING|IN_PROGRESS|QUEUED|PENDING|WAITING|INPUT_REQUIRED/.test(
               state + " " + responseText
             );
-            const failed = Boolean(result?.isError || initial.parsed?.isError || initial.parsed?.error)
-              || /STATUS:\s*(FAILED|ERROR|CANCELLED|TIMED_OUT)|\b(ERROR|FAILED)\b/i.test(responseText)
-              || /^(FAILED|ERROR|CANCELLED|TIMED_OUT)$/.test(state);
             const explicitComplete = /STATUS:\s*(COMPLETED|SUCCESS|SUCCEEDED|DONE)/i.test(responseText)
               || /^(COMPLETED|SUCCESS|SUCCEEDED|DONE)$/.test(state);
+            const failed = Boolean(result?.isError || initial.parsed?.isError || initial.parsed?.error)
+              || /STATUS:\s*(FAILED|ERROR|CANCELLED|TIMED_OUT)/i.test(responseText)
+              || /^(FAILED|ERROR|CANCELLED|TIMED_OUT)$/.test(state);
             const directComplete = responseText.trim().length > 200 && !isPending && !failed && (!taskId || waitedForTask);
             const isComplete = !failed && !isPending && (explicitComplete || directComplete);
             return {
