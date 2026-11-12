@@ -9,6 +9,7 @@ on:
       - release/v3.8.54
       - agent-router-a2a-20261112-05
       - agent-router-a2a-20261112-06
+      - agent-router-a2a-20261113-01
     paths:
       - ".github/workflows/agent-router-a2a.yml"
       - "docs/agent-execution/current-task.md"
