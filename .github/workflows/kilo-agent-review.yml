@@ -1,0 +1,180 @@
+name: Kilo free-tier read-only OmniRoute review
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_ref:
+        description: "Release ref to compare"
+        required: true
+        type: string
+        default: "release/v3.8.54"
+      head_ref:
+        description: "Historical implementation ref to compare"
+        required: true
+        type: string
+        default: "agent-router-a2a-20261112-06"
+  push:
+    branches:
+      - kilo-agent-review-20261112-01
+    paths:
+      - ".github/workflows/kilo-agent-review.yml"
+      - ".kilo/agents/omniroute-reviewer.md"
+      - "docs/agent-execution/kilo-gateway.md"
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: kilo-agent-review-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  read-only-agent-review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      BASE_REF: ${{ github.event.inputs.base_ref || 'release/v3.8.54' }}
+      HEAD_REF: ${{ github.event.inputs.head_ref || 'agent-router-a2a-20261112-06' }}
+      KILO_PROVIDER: kilocode
+      KILOCODE_MODEL: minimax/minimax-m2.1:free
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Prepare line-numbered source evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$BASE_REF" in
+            "release/v3.8.54") ;;
+            *) echo "Unsupported base ref: $BASE_REF"; exit 2 ;;
+          esac
+          case "$HEAD_REF" in
+            "agent-router-a2a-20261112-06") ;;
+            *) echo "Unsupported historical ref: $HEAD_REF"; exit 2 ;;
+          esac
+          mkdir -p artifacts/source
+          git fetch --no-tags origin \
+            "+refs/heads/$BASE_REF:refs/remotes/origin/review-base" \
+            "+refs/heads/$HEAD_REF:refs/remotes/origin/review-head"
+          git show origin/review-base:.github/workflows/agent-router-a2a.yml | nl -ba > artifacts/source/release-agent-router-workflow.txt
+          git show origin/review-head:.github/workflows/agent-router-a2a.yml | nl -ba > artifacts/source/historical-agent-router-workflow.txt
+          git show origin/review-base:docs/agent-execution/current-task.md 2>/dev/null | nl -ba > artifacts/source/release-current-task.txt || true
+          git show origin/review-head:docs/agent-execution/current-task.md 2>/dev/null | nl -ba > artifacts/source/historical-current-task.txt || true
+          git diff --stat origin/review-base...origin/review-head > artifacts/source/diff-stat.txt
+          git log --oneline --left-right origin/review-base...origin/review-head > artifacts/source/commit-divergence.txt
+          {
+            echo "# OmniRoute branch promotion review context"
+            echo
+            echo "- Base ref: $BASE_REF"
+            echo "- Head ref: $HEAD_REF"
+            echo "- Base SHA: $(git rev-parse origin/review-base)"
+            echo "- Head SHA: $(git rev-parse origin/review-head)"
+            echo
+            echo "## Run #64 actual execution evidence"
+            echo "- GitHub Actions run: https://github.com/evanbrown3000/OmniRoute-evan/actions/runs/43250421315"
+            echo "- Primary TaskPlanner task ID: 38d3ae09-f87b-42b2-b59f-966a9370ba93; HTTP 200; provider terminal COMPLETED; response length 26,074 characters."
+            echo "- Primary response had zero repository path mentions. It was a generic goal/phase plan and ended by asking which follow-up artifact to produce."
+            echo "- Secondary FirstPrinciplesAnalyst task ID: 99ebf816-4784-46b7-968d-d6afdf11820d; HTTP 200; provider terminal COMPLETED; response length 21,079 characters."
+            echo "- Secondary response had zero repository path mentions and began by claiming it could not perform live dispatches, browser HAR capture, or A2A preflight, although those operations had actually completed."
+            echo "- 36% deterministic selection bucket was 9; independent secondary was selected."
+            echo "- Lordevo Shop external A2A preflight returned HTTP 200 and COMPLETED with context ID 4992785b-da6c-4eef-bfbe-4502976fb7c1. This is an external A2A utility/context receipt, not an LLM agent task ID."
+            echo "- Sanitized HAR artifact: 44 entries, 3 POSTs to https://www.agent-router.org/mcp-http/mcp, no request/response bodies or headers. DeepWiki requests returned HTTP 429."
+            echo "- Node-side native task submission and terminal polling are evidenced in the GitHub Actions log, not in the browser HAR."
+            echo
+            echo "## External capacity evidence"
+            echo "- Vercel Hobby sandbox creation was rejected with HTTP 402 resource_creation_blocked because the team exceeded fair-use limits. Do not bypass or change billing/security settings automatically."
+            echo "- The separate Browser Use browser-agent route returned quota_exhausted. Do not multiply accounts or IPs to bypass limits."
+            echo "- Kilo Gateway documents anonymous access for :free models, limited to 200 requests/hour/IP. This review uses one legitimate free-model route."
+            echo
+            echo "## Required review"
+            echo "Compare both line-numbered workflow snapshots and task documents. Verify exact implementation behavior, identify false-success conditions, determine whether the historical branch should be promoted, and specify the minimum changes needed to preserve Pipeline as the only recurring scheduler."
+          } > artifacts/source/review-context.md
+          printf '%s\n' "Prepared source snapshots and run evidence."
+
+      - name: Install Kilo Code CLI
+        run: |
+          npm install --global @kilocode/cli
+          kilo --version | tee artifacts/source/kilo-version.txt
+          kilo models kilocode --verbose --refresh > artifacts/source/kilo-model-catalog.txt 2>&1 || true
+
+      - name: Execute independent Kilo architecture agent
+        id: kilo
+        continue-on-error: true
+        run: |
+          set +e
+          timeout 600 kilo run \
+            --auto \
+            --agent omniroute-reviewer \
+            --model kilocode/minimax/minimax-m2.1:free \
+            --title "OmniRoute historical branch promotion review" \
+            --format json \
+            "Read artifacts/source/review-context.md and all four line-numbered source snapshots under artifacts/source/. Compare release/v3.8.54 with agent-router-a2a-20261112-06. Produce a source-backed engineering decision, not a generic plan. Cite at least two exact file:line references from each relevant branch. Explicitly evaluate the 36% independent secondary branch, primary-first state machine, same-ID terminal polling, resume semantics, semantic quality gates, HAR evidence, external A2A distinction, and the conflict between any GitHub cron schedule and Pipeline's sole-scheduler ownership. State whether the historical workflow should be promoted, what must change before promotion, and what must remain separate. Do not modify files, run tests, or use shell." \
+            > artifacts/kilo-review.jsonl 2> artifacts/kilo-review.stderr
+          code=$?
+          echo "$code" > artifacts/kilo-exit-code.txt
+          set -e
+          kilo session list --all --format json > artifacts/kilo-sessions.json 2> artifacts/kilo-sessions.stderr || true
+
+      - name: Build Kilo execution receipt and semantic quality result
+        if: always()
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const crypto = require('node:crypto');
+          const raw = fs.existsSync('artifacts/kilo-review.jsonl') ? fs.readFileSync('artifacts/kilo-review.jsonl','utf8') : '';
+          const events = raw.split(/\r?\n/).filter(Boolean).map(line => { try { return JSON.parse(line); } catch { return null; } }).filter(Boolean);
+          const parts = [];
+          const sessionIds = [];
+          const completionIds = [];
+          for (const e of events) {
+            if (e.type === 'text' && typeof e.part?.text === 'string') parts.push(e.part.text);
+            else if (e.part?.type === 'text' && typeof e.part?.text === 'string') parts.push(e.part.text);
+            else if (typeof e.text === 'string' && ['text','assistant_message','message'].includes(e.type)) parts.push(e.text);
+            for (const id of [e.sessionID,e.sessionId,e.session?.id,e.data?.sessionID]) if (typeof id === 'string' && id) sessionIds.push(id);
+            for (const id of [e.completionId,e.response?.id,e.data?.completionId]) if (typeof id === 'string' && id) completionIds.push(id);
+          }
+          const answer = parts.join('\n').trim();
+          const pathRefs = [...new Set((answer.match(/(?:\.github\/|docs\/)[A-Za-z0-9_./-]+/g) || []))];
+          const lineRefs = answer.match(/(?:\bL\d+\b|\bline\s+\d+\b|:\d+(?:-\d+)?)/gi) || [];
+          const branches = ['release/v3.8.54','agent-router-a2a-20261112-06'].filter(x => answer.includes(x));
+          const exitCode = Number(fs.readFileSync('artifacts/kilo-exit-code.txt','utf8').trim() || '1');
+          const qualityGatePassed = exitCode === 0 && answer.length >= 1400 && pathRefs.length >= 2 && lineRefs.length >= 2 && branches.length === 2 && /pipeline/i.test(answer) && /(promot|promotion|merge)/i.test(answer);
+          const receipt = {
+            provider: 'Kilo Code CLI / Kilo AI Gateway',
+            access: 'anonymous free model; no account or API key',
+            model: 'kilocode/minimax/minimax-m2.1:free',
+            githubRunId: process.env.GITHUB_RUN_ID,
+            githubRunUrl: 'https://github.com/evanbrown3000/OmniRoute-evan/actions/runs/' + process.env.GITHUB_RUN_ID,
+            baseRef: process.env.BASE_REF,
+            headRef: process.env.HEAD_REF,
+            sessionIds: [...new Set(sessionIds)],
+            completionIds: [...new Set(completionIds)],
+            exitCode,
+            answerLength: answer.length,
+            pathReferences: pathRefs,
+            lineReferenceCount: lineRefs.length,
+            branchReferences: branches,
+            responseSha256: crypto.createHash('sha256').update(answer).digest('hex'),
+            qualityGatePassed,
+            answer
+          };
+          fs.writeFileSync('artifacts/kilo-review.json', JSON.stringify(receipt,null,2));
+          console.log(JSON.stringify({exitCode,answerLength:answer.length,pathReferences:pathRefs.length,lineReferences:lineRefs.length,branchReferences:branches,qualityGatePassed,sessionIds:[...new Set(sessionIds)],completionIds:[...new Set(completionIds)]}));
+          NODE
+
+      - name: Upload Kilo agent evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kilo-agent-review-${{ github.run_id }}
+          path: artifacts/
+          retention-days: 30
+
+      - name: Enforce semantic review quality
+        if: always()
+        run: |
+          node -e "const r=require('./artifacts/kilo-review.json'); if(!r.qualityGatePassed){console.error('Kilo agent did not produce a source-backed repository review; see uploaded artifact.');process.exit(1)}"
