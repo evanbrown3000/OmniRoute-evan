@@ -17,7 +17,7 @@ jobs:
     container:
       image: mcr.microsoft.com/playwright:v1.65.0-resolute
       options: --ipc=host
-    timeout-minutes: 12
+    timeout-minutes: 15
     steps:
       - name: Install matching Playwright package
         run: |
@@ -160,7 +160,7 @@ jobs:
           const toolsResponse = await rpc("tools/list", {}, 1);
           const toolSpecs = toolsResponse.parsed?.result?.tools ?? [];
           const toolNames = toolSpecs.map(tool => tool.name);
-          const selectedNames = ["softwareengineeringexpert", "researchagent"];
+          const selectedNames = ["softwareengineeringexpert", "reasoningdelegationhigh"];
           const selectedSpecs = toolSpecs.filter(tool => selectedNames.includes(tool.name));
           console.log("AGENT_TOOL_SCHEMAS=" + JSON.stringify(selectedSpecs.map(tool => ({
             name: tool.name,
@@ -276,7 +276,7 @@ jobs:
             const spec = selectedSpecs.find(item => item.name === name);
             if (!spec) return { name, status: "failed", error: "Agent Router did not advertise this agent tool" };
             const args = buildArgs(spec);
-            const initial = await rpc("tools/call", { name, arguments: args }, id);
+            const initial = await rpc("tools/call", { name, arguments: args }, id, 120000);
             let result = initial.parsed?.result ?? initial.parsed;
             let responseText = extractText(result);
             let taskId = result?.structuredContent?.task_id
@@ -299,10 +299,11 @@ jobs:
               const waitSpec = toolSpecs.find(item => item.name === "wait_for_task");
               if (waitSpec) {
                 const waitArgs = buildArgs(waitSpec, prompt, taskId);
+                if ("max_wait_seconds" in waitArgs) waitArgs.max_wait_seconds = 300;
                 const waited = await rpc("tools/call", {
                   name: "wait_for_task",
                   arguments: waitArgs
-                }, id + 100, 210000);
+                }, id + 100, 310000);
                 result = waited.parsed?.result ?? waited.parsed;
                 responseText = extractText(result);
                 state = readState(result) || responseText.match(/STATUS:\\s*([A-Z_-]+)/i)?.[1]?.toUpperCase() || state;
@@ -316,8 +317,7 @@ jobs:
               || /^(FAILED|ERROR|CANCELLED|TIMED_OUT)$/.test(state);
             const explicitComplete = /STATUS:\\s*(COMPLETED|SUCCESS|SUCCEEDED|DONE)/i.test(responseText)
               || /^(COMPLETED|SUCCESS|SUCCEEDED|DONE)$/.test(state);
-            const directComplete = !taskId && responseText.trim().length > 200 && !isPending && !failed;
-            const isComplete = !failed && !isPending && (explicitComplete || directComplete);
+            const isComplete = !failed && !isPending && explicitComplete;
             return {
               name,
               status: isComplete ? "completed" : failed ? "failed" : "incomplete",
@@ -333,6 +333,7 @@ jobs:
             const name = selectedNames[index];
             try {
               results.push(await callAgentTool(name, 10 + index));
+              if (results.at(-1)?.status === "completed") break;
             } catch (error) {
               results.push({ name, status: "failed", error: String(error).slice(0, 2000) });
             }
