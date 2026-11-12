@@ -255,6 +255,7 @@ jobs:
           const selectedSpecs = toolSpecs.filter(tool => candidateNames.includes(tool.name));
           console.log("AGENT_TOOL_SCHEMAS=" + JSON.stringify(selectedSpecs.map(tool => ({
             name: tool.name,
+            description: tool.description ?? null,
             inputSchema: tool.inputSchema
           }))));
 
@@ -353,6 +354,9 @@ jobs:
           const buildArgs = (spec, task = prompt, taskId = null) => {
             const schema = spec.inputSchema ?? {};
 
+            return buildSchemaValue(schema, schema, "", task, taskId);
+          };
+
           const readbackNames = [
             "get_task", "get_task_result", "get_task_status", "read_task",
             "read_task_result", "read_task_status", "task_status", "task_result",
@@ -377,8 +381,7 @@ jobs:
           console.log("TASK_READBACK_TOOL_SCHEMAS=" + JSON.stringify(readbackSpecs.map(tool => ({
             name: tool.name, description: tool.description ?? null, inputSchema: tool.inputSchema
           }))));
-            return buildSchemaValue(schema, schema, "", task, taskId);
-          };
+
 
           let discovery = null;
           const discoverySpec = toolSpecs.find(item => item.name === "discover_agents");
@@ -436,8 +439,8 @@ jobs:
               || /STATUS:\s*(FAILED|ERROR|CANCELLED|TIMED_OUT|REJECTED)|TASK_STATE_FAILED/i.test(extractText(value));
             if (taskId && !terminalSuccess(result) && !terminalFailure(result)) {
               waitedForTask = true;
-              // The workflow has a 25-minute ceiling. Keep one native task alive and
-              // read it back for up to 16 minutes; never launch a duplicate fallback
+              // The workflow has a 50-minute ceiling. Keep one native task alive and
+              // read it back for up to 40 minutes; never launch a duplicate fallback
               // merely because the first provider has not finished yet.
               for (let poll = 0; poll < 20; poll++) {
                 const waited = await rpc("tools/call", {
@@ -472,8 +475,8 @@ jobs:
                   readbackResult = readback.parsed?.result ?? readback.parsed;
                 } else {
                   const readback = await rpc("tools/call", {
-                    name: "wait_for_task", arguments: { task_id: taskId, max_wait_seconds: 1 }
-                  }, id + 200, 15000);
+                    name: "wait_for_task", arguments: { task_id: taskId, max_wait_seconds: 120 }
+                  }, id + 200, 130000);
                   readbackResult = readback.parsed?.result ?? readback.parsed;
                 }
                 let readbackText = extractText(readbackResult);
@@ -485,8 +488,8 @@ jobs:
                   || readbackText.match(/task[_ -]?id\s*[:=]\s*([A-Za-z0-9._:-]+)/i)?.[1] || null;
                 if (readbackSpec && readbackText.trim().length <= 80) {
                   const repeat = await rpc("tools/call", {
-                    name: "wait_for_task", arguments: { task_id: taskId, max_wait_seconds: 1 }
-                  }, id + 201, 15000);
+                    name: "wait_for_task", arguments: { task_id: taskId, max_wait_seconds: 120 }
+                  }, id + 201, 130000);
                   const repeatResult = repeat.parsed?.result ?? repeat.parsed;
                   const repeatText = extractText(repeatResult);
                   if (terminalSuccess(repeatResult) && repeatText.trim().length > 80) {
@@ -516,6 +519,7 @@ jobs:
             return {
               name,
               status: isComplete ? "completed" : failed ? "failed" : "incomplete",
+              requestId,
               httpStatus: initial.status,
               taskId: taskId ?? null,
               state: state || (isComplete ? "completed-response" : "unverified"),
