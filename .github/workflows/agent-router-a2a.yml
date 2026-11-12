@@ -265,7 +265,7 @@ jobs:
             "Recommend one long-term design and the strongest existing architecture to promote; identify minimal integration points, provider failover boundaries, durable identity/secret boundaries, and how to prove a turn actually completed rather than merely being queued.",
             "Do not modify code, create accounts, run tests, assume a free tier without current evidence, or invent successful provider executions. Include direct source URLs and concise reasoning.",
             "An adjacent private memory system exists. Do not attempt to access, quote, or disclose private repository contents. At the architecture level, preserve a clean boundary between canonical conversation/summary storage and the existing graph authority. Use the existing graph system for typed links among conversations, summaries, providers, browser sessions, HAR captures, native task IDs, and deployment evidence. Do not create a competing graph store or place operational receipts, credentials, or private metadata in public repositories.",
-            ""
+            "",
             "Current turn objective:\n" + currentTask,
           ].join("\n\n");
 
