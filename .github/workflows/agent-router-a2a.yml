@@ -12,20 +12,19 @@ permissions: {}
 jobs:
   agent-review:
     runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright:v1.65.0-resolute
+      options: --ipc=host
     timeout-minutes: 8
     steps:
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-
-      - name: Install isolated browser runtime
+      - name: Install matching Playwright package
         run: |
+          node --version
+          npm --version
           mkdir -p "$RUNNER_TEMP/agent-router"
           cd "$RUNNER_TEMP/agent-router"
           npm init -y >/dev/null
-          npm install --no-save playwright@1.56.1
-          npx playwright install --with-deps chromium
+          npm install --no-save playwright@1.65.0
 
       - name: Capture browser HAR and invoke native A2A agents
         working-directory: ${{ runner.temp }}/agent-router
