@@ -1,6 +1,6 @@
 # Active agent-execution assignment
 
-**Request ID:** `gpt6-20261112-omniroute-federation-11`
+**Request ID:** `gpt6-20261112-omniroute-federation-12`
 **Date:** 2026-11-12
 **Mode:** read-only architecture review plus one real remote native-agent execution.
 
@@ -59,6 +59,8 @@ Research current public GitHub projects and official provider documentation for 
 
 
 ## Same-task independent readback continuation — 2026-11-12
+
+Turn 12 trigger: independently re-read the exact existing native task below; do not dispatch a replacement native task. The existing workflow's no-charge external A2A discovery/agent invocation remains enabled. Preserve exact provider-native task identity and terminal readback.
 
 The first native Agent Router run returned this provider task as `COMPLETED`. Re-read the exact same native task in a separate workflow run; do not dispatch a replacement task.
 
