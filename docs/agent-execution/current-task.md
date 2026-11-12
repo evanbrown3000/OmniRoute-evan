@@ -104,3 +104,19 @@ This is the active objective for the next native agent turn; earlier sections ar
 5. Return one architecture recommendation and a staged promotion/integration sequence with exact repository paths, owner boundaries, evidence requirements, and unresolved risks. Do not produce a generic plan instead of a source-backed answer.
 
 Constraints: no new account creation, password reuse, credential collection/disclosure, quota or billing circumvention, paid resource provisioning, outreach, revenue transfers, internal tests, or application-code changes. Do not access private memory-corpus contents. Use existing supported provider routes and respect their quotas. If an invocation fails, report the actual failure and only continue through a distinct supported route.
+
+
+---
+
+## New independent turn — 2026-11-12 — gpt6-20261112-omniroute-federation-04
+
+This is the current assignment. Earlier sections are historical context and must not be duplicated as separate tasks.
+
+1. Compare the current `release/v3.8.54` Agent Router workflow with the strongest historical implementations on `agent-router-a2a-20261112-01` and `agent-router-a2a-20261112-02`. Identify which implementation has the strongest durable task-resume, same-ID polling, terminal-state verification, browser/HAR capture, and peer-agent cadence.
+2. Recommend the best proven historical implementation to promote, preserving the useful current-branch behavior rather than rebuilding. Specifically assess durable `RESUME_TASK` continuation, task-ID extraction, 36% additional-peer selection, no-duplicate fallback while a task is pending, independent readback, and a durable Work Episode receipt.
+3. Preserve ownership: Pipeline is the only durable work/recurrence authority; Work Episode owns assignment and evidence; Networks owns provider/node admission and placement; Accounts owns credential custody and account revisions; B4PT0R owns native provider website-session/turn transport; ComputerUseX owns browser/HAR; OmniRoute owns model/provider routing and A2A/MCP transport. Do not create another scheduler, graph, registry, transcript store, or vault.
+4. Compare current public GitHub implementations and official current free-tier documentation for OpenHands, Google A2A, Agno, LangGraph, Letta, Cloudflare Agents/Browser Run, Browserbase/Browserless, Daytona, E2B, Modal, and stronger alternatives. Distinguish actual native agent execution from inference, browser sessions, and remote compute; quantify free capacity only where primary documentation supports it.
+5. If the existing Agent Router tools expose a no-charge native agent, execute one substantive review turn. If a task ID is returned, poll that same ID to terminal completion and return its actual response. Preserve the 36% additional-peer cadence. If a second provider-native route is available without creating accounts, bypassing quotas, or incurring charges, actually execute it and report its independent task identity and terminal state. A Slack message, queue acknowledgement, HTTP 2xx, or model-only response is not completion.
+6. Return exact source paths, platform/tool names, native task IDs, terminal statuses, browser/HAR evidence, and one long-term promotion recommendation. Identify unavailable capabilities precisely.
+
+Constraints: public source and public documentation only; no account creation, password reuse, credential access/disclosure, quota or billing circumvention, paid provisioning, outreach, listings, revenue transfers, private-memory access, application-code changes, or internal tests. Do not claim a provider turn completed without provider-native terminal evidence.
