@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - agent-router-a2a-20261112-01
+      - agent-router-a2a-20261112-02
     paths:
       - ".github/workflows/agent-router-a2a.yml"
 
