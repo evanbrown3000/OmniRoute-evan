@@ -155,34 +155,65 @@ jobs:
           ].join("\n\n");
 
           const repoUrl = "https://github.com/evanbrown3000/OmniRoute-evan/tree/release/v3.8.54";
-          const buildArgs = (spec) => {
-            const properties = spec.inputSchema?.properties ?? {};
-            const required = spec.inputSchema?.required ?? [];
-            const args = {};
-            for (const key of required) {
-              const normalized = key.toLowerCase();
-              const property = properties[key] ?? {};
-              if (/repo|repository|github|source|url/.test(normalized)) {
-                args[key] = repoUrl;
-              } else if (/query|question|prompt|task|request|goal|objective|instruction|topic|problem|message|description|context|input/.test(normalized)) {
-                args[key] = prompt;
-              } else if (/timeout|wait/.test(normalized)) {
-                args[key] = 180;
-              } else if (/limit|count|top.?k|number|num/.test(normalized)) {
-                args[key] = 8;
-              } else if (property.type === "string") {
-                args[key] = prompt;
-              } else if (property.type === "integer" || property.type === "number") {
-                args[key] = property.default ?? 5;
-              } else if (property.type === "boolean") {
-                args[key] = property.default ?? false;
-              } else if (property.type === "array") {
-                args[key] = property.default ?? [];
-              } else if (property.type === "object") {
-                args[key] = property.default ?? {};
-              }
+          const resolveSchema = (schema, root, depth = 0) => {
+            if (!schema || depth > 10) return schema ?? {};
+            if (schema.$ref) {
+              const target = schema.$ref.replace(/^#\//, "").split("/").reduce((value, part) => {
+                const key = part.replace(/~1/g, "/").replace(/~0/g, "~");
+                return value?.[key];
+              }, root);
+              return resolveSchema(target, root, depth + 1);
             }
-            return args;
+            if (schema.allOf?.length) {
+              const merged = { ...schema, properties: { ...(schema.properties ?? {}) }, required: [...(schema.required ?? [])] };
+              for (const part of schema.allOf) {
+                const resolved = resolveSchema(part, root, depth + 1);
+                Object.assign(merged.properties, resolved.properties ?? {});
+                merged.required.push(...(resolved.required ?? []));
+              }
+              merged.required = [...new Set(merged.required)];
+              return merged;
+            }
+            if (schema.oneOf?.length) return resolveSchema(schema.oneOf[0], root, depth + 1);
+            if (schema.anyOf?.length) return resolveSchema(schema.anyOf[0], root, depth + 1);
+            return schema;
+          };
+
+          const buildSchemaValue = (inputSchema, root, key, task, taskId = null) => {
+            const schema = resolveSchema(inputSchema, root);
+            const name = String(key ?? "").toLowerCase();
+            if (schema.const !== undefined) return schema.const;
+            if (Array.isArray(schema.enum) && schema.enum.length) return schema.enum[0];
+            if (schema.type === "object" || schema.properties) {
+              const properties = schema.properties ?? {};
+              const required = schema.required ?? Object.keys(properties);
+              const value = {};
+              for (const child of required) {
+                if (properties[child]) value[child] = buildSchemaValue(properties[child], root, child, task, taskId);
+              }
+              return value;
+            }
+            if (schema.type === "array") return schema.default ?? [];
+            if (schema.type === "string") {
+              if (taskId && /task.*id|id.*task/.test(name)) return taskId;
+              if ((/repo|repository|github|source/.test(name) && /url|uri|link/.test(name)) ||
+                  ["repo", "repository", "source_url"].includes(name)) return repoUrl;
+              if (/timeout|wait|seconds/.test(name)) return String(180);
+              return task;
+            }
+            if (schema.type === "integer" || schema.type === "number") {
+              if (/timeout|wait|seconds/.test(name)) return 180;
+              if (/limit|count|top.?k|number|num/.test(name)) return 8;
+              return schema.default ?? 5;
+            }
+            if (schema.type === "boolean") return schema.default ?? false;
+            if (schema.default !== undefined) return schema.default;
+            return task;
+          };
+
+          const buildArgs = (spec, task = prompt, taskId = null) => {
+            const schema = spec.inputSchema ?? {};
+            return buildSchemaValue(schema, schema, "", task, taskId);
           };
 
           const extractText = (result) => {
@@ -193,31 +224,56 @@ jobs:
 
           const callAgentTool = async (name, id) => {
             const spec = selectedSpecs.find(item => item.name === name);
-            if (!spec) return { name, error: "Agent Router did not advertise this agent tool" };
+            if (!spec) return { name, status: "failed", error: "Agent Router did not advertise this agent tool" };
             const args = buildArgs(spec);
-            const missing = (spec.inputSchema?.required ?? []).filter(key => !(key in args));
-            if (missing.length) return { name, error: "Required input mapping missing: " + missing.join(", "), schema: spec.inputSchema };
             const initial = await rpc("tools/call", { name, arguments: args }, id);
             let result = initial.parsed?.result ?? initial.parsed;
             let responseText = extractText(result);
-            const taskId = result?.structuredContent?.task_id
+            let taskId = result?.structuredContent?.task_id
               || result?.task_id
-              || responseText.match(/task[_ ]?id\\s*[:=]\\s*([a-f0-9-]+)/i)?.[1];
-            if (taskId && /RUNNING|IN_PROGRESS/i.test(responseText)) {
-              const waited = await rpc("tools/call", {
-                name: "wait_for_task",
-                arguments: { task_id: taskId, max_wait_seconds: 180 }
-              }, id + 100);
-              result = waited.parsed?.result ?? waited.parsed;
-              responseText = extractText(result);
+              || result?.task?.id
+              || responseText.match(/task[_ -]?id\\s*[:=]\\s*([A-Za-z0-9._:-]+)/i)?.[1]
+              || null;
+            const readState = value => String(
+              value?.structuredContent?.state ??
+              value?.structuredContent?.status ??
+              value?.state ??
+              value?.status ??
+              ""
+            ).toUpperCase();
+            let state = readState(result) || responseText.match(/STATUS:\\s*([A-Z_-]+)/i)?.[1]?.toUpperCase() || "";
+            const pending = value => /RUNNING|IN_PROGRESS|QUEUED|PENDING|WAITING|INPUT_REQUIRED/.test(
+              readState(value) + " " + extractText(value)
+            );
+            if (taskId && (pending(result) || !/COMPLETED|SUCCESS|SUCCEEDED|DONE/.test(state))) {
+              const waitSpec = toolSpecs.find(item => item.name === "wait_for_task");
+              if (waitSpec) {
+                const waitArgs = buildArgs(waitSpec, prompt, taskId);
+                const waited = await rpc("tools/call", {
+                  name: "wait_for_task",
+                  arguments: waitArgs
+                }, id + 100);
+                result = waited.parsed?.result ?? waited.parsed;
+                responseText = extractText(result);
+                state = readState(result) || responseText.match(/STATUS:\\s*([A-Z_-]+)/i)?.[1]?.toUpperCase() || state;
+              }
             }
+            const isPending = /RUNNING|IN_PROGRESS|QUEUED|PENDING|WAITING|INPUT_REQUIRED/.test(
+              state + " " + responseText
+            );
             const failed = Boolean(result?.isError || initial.parsed?.isError || initial.parsed?.error)
-              || /STATUS:\\s*(FAILED|ERROR)|\\bERROR\\b/i.test(responseText);
+              || /STATUS:\\s*(FAILED|ERROR|CANCELLED|TIMED_OUT)|\\b(ERROR|FAILED)\\b/i.test(responseText)
+              || /^(FAILED|ERROR|CANCELLED|TIMED_OUT)$/.test(state);
+            const explicitComplete = /STATUS:\\s*(COMPLETED|SUCCESS|SUCCEEDED|DONE)/i.test(responseText)
+              || /^(COMPLETED|SUCCESS|SUCCEEDED|DONE)$/.test(state);
+            const directComplete = !taskId && responseText.trim().length > 200 && !isPending && !failed;
+            const isComplete = !failed && !isPending && (explicitComplete || directComplete);
             return {
               name,
-              status: failed ? "failed" : "completed",
+              status: isComplete ? "completed" : failed ? "failed" : "incomplete",
               httpStatus: initial.status,
               taskId: taskId ?? null,
+              state: state || (isComplete ? "completed-response" : "unverified"),
               response: responseText
             };
           };
