@@ -12,6 +12,13 @@ permissions:
   actions: write
   contents: read
 
+permissions:
+  contents: read
+
+concurrency:
+  group: agent-router-a2a-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   agent-review:
     runs-on: ubuntu-latest
