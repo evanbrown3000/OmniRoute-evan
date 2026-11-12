@@ -1,43 +1,39 @@
-# Native agent federation — current-turn terminal readback
+# Native agent federation — current-turn architecture review
 
-REQUEST_ID: gpt6-20261112-omniroute-federation-06
+REQUEST_ID: gpt6-20261112-omniroute-expansion-07
 TARGET_AGENT: taskplanner
 SECONDARY_AGENT: firstprinciplesanalyst
-RESUME_TASK_ID: 75018d69-e197-435b-8848-9c09c8f9dc9d
-RESUME_AGENT_NAME: taskplanner
 CROSS_PLATFORM_ONLY: true
 PUBLIC_SOURCES_ONLY: true
 
 ## Task
 
-This is a continuation and independent readback of an already-issued native agent task. It is not a new primary assignment.
+You are an independent agent on the Agent Router platform. This is a NEW native agent assignment from ChatGPT, not a continuation of an earlier task. Perform the work now and return a substantive, source-backed result. Do not merely acknowledge or outline a future plan.
 
-Call the Agent Router MCP `wait_for_task` tool using exactly `RESUME_TASK_ID`. Poll that same provider-native task until a terminal state is independently returned. Preserve the exact task ID, terminal state, provider response, and readback evidence. Do not submit another TaskPlanner prompt or duplicate the original work.
+Review the current OmniRoute/Cognilode federation architecture and recommend the strongest existing implementation to promote for a durable, recursively expanding heterogeneous agent network.
 
-Context from the current direct-owner run:
-- GitHub Actions workflow: `43237534616`
-- Original provider: Agent Router MCP
-- TaskPlanner native task ID: `75018d69-e197-435b-8848-9c09c8f9dc9d`
-- Initial response text included `STATUS: COMPLETED`, but the workflow recorded `waitedForTask: false`; this follow-up exists specifically to verify the same ID through `wait_for_task`.
-- SoftwareEngineeringExpert failed with MCP HTTP 502.
-- The 36% additional-agent branch selected `researchagent`, which failed with MCP HTTP 502. Do not claim that secondary task completed.
-- TaskPlanner was the successful fallback, not proof that the selected secondary agent succeeded.
+Repository: https://github.com/evanbrown3000/OmniRoute-evan
+Default branch: release/v3.8.54
+Relevant historical branch: agent-router-a2a-20261112-03
 
-After readback, apply this workflow's stable request-ID-based secondary rule. Do not manufacture a second turn or reroll the probability to force a branch. If the rule selects a second agent, execute it and independently record its result; otherwise record the deterministic decision.
+Required analysis:
+1. Compare the default-branch .github/workflows/agent-router-a2a.yml with the historical .github/workflows/agent-router-cross-platform.yml and its docs/agent-execution/cross-platform-task.md. Identify which has the stronger execution contract and what must be carried forward.
+2. Assess the latest public GitHub evidence for open-source agent runtimes and protocols, prioritizing durable multi-agent execution, provider-native turns, A2A/MCP interoperability, remote browser sessions, and deployable free/self-hosted capacity. Include direct GitHub repository URLs.
+3. Assess current official free/starter tiers for agent platforms and remote execution/browser providers. Separate recurring free allowances from one-time promotional credits and paid-only capacity. Cite official product documentation or pricing pages; do not infer a free allowance from marketing language.
+4. Preserve the existing ownership boundaries: Pipeline owns recurrence/leases/retries/reconciliation; Work Episodes own parent/child identity and terminal evidence; Networks owns capability discovery, placement, quotas and failure domains; Accounts & Secrets owns encrypted credential custody; ComputerUseX owns browser sessions/HAR; LibreChat owns API agent graphs; B4PT0R owns provider-native website sessions where API agents are insufficient; OmniRoute owns inference/provider routing and A2A/MCP transport, not global scheduling.
+5. Distinguish four independent capabilities: model inference, provider-native agent turns, browser sessions, and remote compute. Explain why one does not prove the others.
+6. Recommend a minimal, top-down integration path that improves the durable cross-platform child-turn contract, preserves the strongest historical code, supports independent provider failures, and yields a verifiable receipt containing request ID, provider, agent, native task/session ID, terminal state, timestamps, cost/quota domain, browser/HAR evidence where applicable, and independent readback.
+7. Explain how a deterministic 36% second-reviewer branch should be derived from the stable request ID and why retries must reuse the same child identity rather than silently creating duplicate work.
 
-## Review scope
+Return:
+- A concise executive recommendation.
+- A comparison of the two workflows with exact file paths.
+- A ranked list of public GitHub repositories and current free-tier execution candidates, with source links and limitations.
+- A concrete target architecture and rollout order.
+- Explicitly distinguish verified facts, uncertain claims, and recommendations.
 
-Return the completed TaskPlanner result and assess the long-term federation design:
-1. One durable work authority: Pipeline owns recurrence, leases, retries and reconciliation.
-2. Work Episode owns parent/child assignment identity, provider-native IDs, evidence and terminal receipts.
-3. Networks owns provider/node admission, capability placement, region/egress, quota windows and failure domains.
-4. Accounts & Secrets owns encrypted credential custody and account revisions.
-5. ComputerUseX owns remote browser sessions and sanitized HAR evidence.
-6. B4PT0R owns provider-native website sessions only where API-native agent transport is insufficient.
-7. LibreChat remains an existing agent runtime; OmniRoute owns inference routing and A2A/MCP transport, not another scheduler.
-
-Compare the current release workflow with the strongest historical implementation. Recommend the best existing implementation to promote, with exact source paths. Distinguish native agent execution, inference, browser capability and remote compute. Use public GitHub repositories and official current provider documentation only.
-
-## Constraints
-
-No account creation, credential access/disclosure, password reuse, quota/rate-limit/billing circumvention, paid provisioning, outreach, listings, revenue transfers, private-memory access, application-code changes or internal tests. Do not expose private deployment identifiers or account data. Do not claim completion without provider-native terminal evidence.
+Constraints:
+- This is research and architecture review only. Do not modify application code, create accounts, access credentials, use private repositories, run tests, purchase anything, invoke paid skills, bypass quotas/rate limits/billing, send outreach, create listings, or transfer funds.
+- Do not claim an agent task completed without provider-native terminal evidence and readback of the same task ID.
+- Do not create a competing scheduler, credential vault, or graph authority.
+- Public sources only; do not expose private deployment identifiers, account data, or secrets.
