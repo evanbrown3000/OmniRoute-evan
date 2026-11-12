@@ -1,30 +1,31 @@
-# Current architecture review
+# Current task
 
-Review the production system as one long-lived organism, not as isolated repositories or one-turn fixes.
+Request ID: `chatgpt-20261112-per-turn-agent-event-02`
 
-## Primary objective
+## Objective
 
-Recommend the strongest existing architecture to promote for durable cross-platform agent execution, remote browser sessions, recursive memory, graph retrieval, and measurable business outcomes. Start from the most advanced proven historical implementation; do not rebuild from scratch or preserve inferior duplicate methods.
+Design and execute the durable per-user-turn cross-platform agent handoff by extending the strongest existing implementation. Preserve the existing domain ownership and do not introduce a second scheduler, agent registry, credential vault, memory graph authority, or account inventory.
 
 ## Required investigation
 
-1. Inspect the current OmniRoute implementation and relevant historical branches/commits. Distinguish model inference, provider-native agent turns, durable task orchestration, browser sessions, and browser-derived backend API integrations.
-2. Use provider-first browser research. Capture the live browser HAR, identify actual backend/API endpoints, inspect request/response contracts, and separate a browser session from an agent execution. Do not infer that a task completed from an HTTP 200, queue acknowledgement, or task acceptance.
-3. Research public GitHub repositories and current agent platforms, prioritizing open-source and genuinely usable free tiers. Compare at least: A2A, MCP, Playwright MCP, Browser Use, OpenHands, LangGraph or Microsoft Agent Framework, Agno, mcp-use, OpenWOP, Cloudflare Workers/Browser Run, Daytona, E2B, Modal, Blaxel, Browserbase/Browserless, and Mem0 where relevant. Verify claims against official documentation and active repository code.
-4. Use DeepWiki for OmniRoute and related repositories when accessible, but cross-check all material claims against source code and official documentation.
-5. Inspect the current graph/memory ownership boundary at the architecture level. Preserve canonical conversation and summary records, source-qualified graph authority, sparse N-dimensional links, temporal provenance, graph lookup, and incremental hand-labeled retrieval evaluation. Do not create a competing graph store.
-6. If the AgentRouter MCP exposes public A2A agents on distinct platforms, select one and actually trigger a follow-on agent turn. Wait for a provider-native terminal result and read it back. Report the platform, agent/tool, native task identifier when available, terminal state, and substantive result. An accepted/queued dispatch is not completion.
-7. Identify the highest-leverage long-term improvement, the best historical implementation to promote, the smallest coherent integration boundary, and the highest-risk failure mode. Include an upgrade sequence that converges on one winning implementation rather than retaining redundant alternatives.
+1. Inspect the existing public OmniRoute A2A/MCP implementation and the current `agent-router-a2a` workflow. Distinguish a real provider-native task from a queued prompt, ordinary model completion, or workflow status.
+2. Determine the smallest robust event-driven trigger that lets a new ChatGPT user turn submit a unique work request to the existing remote executor. Pipeline remains the durable work and recurrence owner; this workflow is only an execution adapter.
+3. Preserve the existing A2A client, browser/HAR capture, provider readback, and task continuation rather than starting over. Identify the best historical implementation to promote.
+4. Use only public repositories and public provider documentation. Do not read private repository content or secrets.
 
-## Operating constraints
+## Mandatory agent execution
 
-- Use only real repository, provider, browser, and documentation evidence. Do not invent facts, missing conversations, free-tier quotas, provider capabilities, successful executions, or business outcomes.
-- Do not create provider accounts or submit credentials. Do not initiate payments, x402 skills, or billing changes.
-- Do not contact people, perform outreach, or create external business commitments.
-- Do not modify source code or run internal test suites for this review.
-- Do not access, quote, or disclose private repository contents. Preserve the existing separation between private memory content and the public OmniRoute codebase.
-- Keep the result focused on the long-term system design and real operational evidence.
+1. Use AgentRouter MCP discovery to select a real agent on a distinct provider platform.
+2. Trigger a fresh native task with this request ID and a bounded, substantive prompt.
+3. Wait for terminal completion and independently read the provider-side result. Record the native task/conversation identifiers and actual output.
+4. Have the primary agent trigger a successor on a different platform. Wait for that successor's terminal result and provider-side readback. A discovery result, queued task, Slack post, or ordinary model completion does not count.
+5. Explain how the 36% successor rule can be implemented deterministically without creating accounts or multiplying schedulers.
 
-Resume the two provider-native tasks already triggered by the previous run. Do not create duplicate tasks.
-RESUME_TASK: softwareengineeringexpert=9db4818b-aee9-4198-8ce8-bae5c410ac4e
-RESUME_TASK: researchagent=32ea68cb-3c41-4c37-ad3f-cc84076d670f
+## Constraints
+
+- Use existing no-charge, already-authorized provider routes.
+- Do not create accounts, reuse passwords, submit credentials, bypass verification, evade quotas, incur charges, initiate payments, contact people, perform outreach, or create external business commitments.
+- Do not invent facts, provider results, task IDs, or completion states.
+- Do not modify application source code or run internal test suites during this review.
+- Do not create receipts or write private conversation content into this public repository.
+- Return a top-down architecture, the exact production execution evidence, current blockers, and the single highest-value next implementation step.
