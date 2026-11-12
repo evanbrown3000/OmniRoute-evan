@@ -47,3 +47,10 @@ Keep private memory-corpus contents out of this public repository and out of ext
 ## Current-turn fallback dispatch
 
 The independent Cloudflare head returned unavailable without a provider-native result readback. Use the existing Agent Router/A2A workflow as the next independent route. Run it once after this update, capture the real browser HAR and backend MCP request/response details, invoke one native external agent, and poll that same task identity to terminal completion and readback. Do not duplicate a task while it remains pending; do not create accounts, reuse passwords, bypass quotas, or modify gateway source code.
+
+
+## Invocation request — 2026-11-12
+
+Request ID: `gpt6-20261112-omniroute-agent-turn-01`
+
+Run the existing `.github/workflows/agent-router-a2a.yml` workflow for this turn. Execute its real browser/HAR capture and native Agent Router MCP sequence. Invoke at least one distinct-platform native agent; if it returns a task ID, poll that same task to a provider-native terminal state and read back the result. Preserve the existing 36% additional-agent cadence. Record the HAR artifact and exact evidence. This request is not satisfied by a push acknowledgement, queued prompt, HTTP 2xx alone, tool discovery, or inference completion.
