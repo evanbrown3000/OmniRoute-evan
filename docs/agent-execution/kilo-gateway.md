@@ -29,7 +29,7 @@ Install and run the agent in a remote runner:
 npm install -g @kilocode/cli
 kilo run --auto \
   --agent omniroute-reviewer \
-  --model kilocode/minimax/minimax-m2.1:free \
+  --model kilo/minimax/minimax-m2.1:free \
   --format json \
   "Review the supplied OmniRoute task."
 ```
