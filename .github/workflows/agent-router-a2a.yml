@@ -8,6 +8,7 @@ on:
     branches:
       - release/v3.8.54
       - agent-router-a2a-sanitized-20261112
+      - agent-router-runner
     paths:
       - ".github/workflows/agent-router-a2a.yml"
       - "docs/agent-execution/current-task.md"
@@ -22,10 +23,11 @@ concurrency:
 jobs:
   agent-review:
     runs-on: ubuntu-latest
+    # Keep the execution ceiling at job scope; container accepts only container configuration.
+    timeout-minutes: 50
     container:
       image: mcr.microsoft.com/playwright:v1.65.0-resolute
       options: --ipc=host
-      timeout-minutes: 50
     steps:
       - name: Install matching Playwright package
         run: |
