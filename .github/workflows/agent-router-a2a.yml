@@ -1,4 +1,4 @@
-name: One-shot cross-platform agent review
+name: Cross-platform agent review with browser HAR and A2A fallback
 
 on:
   workflow_dispatch:
@@ -89,25 +89,72 @@ jobs:
               waitUntil: "domcontentloaded",
               timeout: 30000
             });
-            browserMcpProbe = await page.evaluate(async () => {
-              const response = await fetch("/mcp-http/mcp", {
-                method: "POST",
-                headers: {
-                  "content-type": "application/json",
-                  "accept": "application/json, text/event-stream"
-                },
-                body: JSON.stringify({
-                  jsonrpc: "2.0",
-                  id: "browser-har-discovery",
-                  method: "tools/list",
-                  params: {}
-                })
+            try {
+              browserMcpProbe = await page.evaluate(async () => {
+                const rpc = async (method, params, id) => {
+                  const response = await fetch("/mcp-http/mcp", {
+                    method: "POST",
+                    headers: {
+                      "content-type": "application/json",
+                      "accept": "application/json, text/event-stream"
+                    },
+                    body: JSON.stringify({ jsonrpc: "2.0", id, method, params }),
+                    signal: AbortSignal.timeout(70000)
+                  });
+                  const raw = await response.text();
+                  let parsed;
+                  try {
+                    parsed = JSON.parse(raw);
+                  } catch {
+                    const dataLine = raw.split("\n").find(line => line.startsWith("data:"));
+                    if (dataLine) {
+                      try { parsed = JSON.parse(dataLine.slice(5).trim()); } catch {}
+                    }
+                  }
+                  return { status: response.status, raw, parsed };
+                };
+
+                const listed = await rpc("tools/list", {}, "browser-har-discovery");
+                const specs = listed.parsed?.result?.tools ?? [];
+                const names = specs.map(tool => tool.name);
+                let discovery = null;
+                if (names.includes("discover_agents")) {
+                  discovery = await rpc("tools/call", {
+                    name: "discover_agents",
+                    arguments: {
+                      query: "Find active platform agents for independent research on remote browser execution, open-source agent runtimes, and current free-tier options."
+                    }
+                  }, "browser-har-agent-discovery");
+                }
+                let a2a = null;
+                if (names.includes("a2a_call_agent")) {
+                  a2a = await rpc("tools/call", {
+                    name: "a2a_call_agent",
+                    arguments: {
+                      agent_url: "https://social.duoleads.com/a2a",
+                      message: "Search recent Hacker News discussions and public posts about open-source AI agent platforms, remote execution providers, browser automation, and genuinely free tiers. Return up to five relevant items with exact URLs, dates, key evidence, and whether the platform requires signup. Prefer primary GitHub repositories and official pricing documentation. Do not invent results.",
+                      timeout_seconds: 45
+                    }
+                  }, "browser-har-a2a-turn");
+                }
+                const a2aResult = a2a?.parsed?.result;
+                const a2aText = (a2aResult?.content ?? [])
+                  .filter(item => item.type === "text")
+                  .map(item => item.text)
+                  .join("\n") || JSON.stringify(a2aResult ?? a2a?.parsed ?? {});
+                return {
+                  status: listed.status,
+                  toolNames: names,
+                  discoveryStatus: discovery?.status ?? null,
+                  discoveryExcerpt: discovery?.raw?.slice(0, 5000) ?? null,
+                  a2aStatus: a2a?.status ?? null,
+                  a2aText: a2aText.slice(0, 10000),
+                  a2aError: a2a?.parsed?.error ?? a2aResult?.isError ?? null
+                };
               });
-              return {
-                status: response.status,
-                body: (await response.text()).slice(0, 2000)
-              };
-            });
+            } catch (error) {
+              browserMcpProbe = { error: String(error).slice(0, 1200) };
+            }
           } finally {
             await context.close();
             await browser.close();
@@ -134,7 +181,7 @@ jobs:
           }));
 
           const endpoint = "https://agent-router.org/mcp-http/mcp";
-          const rpc = async (method, params, id, timeoutMs = 55000) => {
+          const rpc = async (method, params, id, timeoutMs = 80000) => {
             const response = await fetch(endpoint, {
               method: "POST",
               headers: {
@@ -200,7 +247,7 @@ jobs:
             "Verified boundaries: the shared browser-pool is an internal Playwright/Chromium pool for provider web interactions, distinct from the VNC login sessions; neither should be described as a general hosted browser provider without verifying the deployed runtime. The A2A server, ACP local CLI registry, AgentBridge, CloudAgent integrations, provider-node inference endpoints, and VNC browser sessions are separate execution surfaces.",
             "Goal: expand durable remote execution providers and browser sessions without starting from scratch. Distinguish (1) model inference endpoints, (2) native agent turns with provider-native completion evidence, and (3) browser sessions with HAR/backend endpoint evidence.",
             "Use DeepWiki at https://deepwiki.com/cheaper-inference/OmniRoute and https://deepwiki.com/evanbrown3000/OmniRoute-evan when available; cross-check its claims against current source code and public documentation.",
-            "Compare current public options including Agent Router MCP/A2A, OpenWOP, OpenHands Cloud, Cloudflare Browser Run, Browserbase, Browserless and any stronger free-tier alternatives you can verify.",
+            "Compare current public options including Agent Router MCP/A2A, OpenWOP, OpenHands Cloud, Cloudflare Browser Run, Browserbase, Browserless and stronger free-tier alternatives. Prioritize public GitHub repositories, current official free-tier quotas, and accountless versus account-required execution.",
             "If the registry exposes a native agent on a distinct provider platform, actually dispatch one follow-on turn and wait for its provider-native completion/readback. Include platform, tool name, task ID, final status, and concise result; queued/accepted acknowledgements do not count. If unavailable, identify the exact missing capability.",
             "Recommend one long-term design and the strongest existing architecture to promote; identify minimal integration points, provider failover boundaries, durable identity/secret boundaries, and how to prove a turn actually completed rather than merely being queued.",
             "Do not modify code, create accounts, run tests, assume a free tier without current evidence, or invent successful provider executions. Include direct source URLs and concise reasoning.",
@@ -300,6 +347,59 @@ jobs:
               || JSON.stringify(result?.structuredContent ?? result ?? {});
           };
 
+          let directA2AResult = null;
+          const browserA2AText = String(browserMcpProbe?.a2aText ?? "");
+          const browserA2AStatus = Number(browserMcpProbe?.a2aStatus ?? 0);
+          const browserA2AError = browserMcpProbe?.a2aError;
+          const browserA2AComplete = browserA2AStatus >= 200 && browserA2AStatus < 300 &&
+            browserA2AText.trim().length > 80 && !browserA2AError &&
+            !/\b(ERROR|FAILED|TIMED_OUT)\b/i.test(browserA2AText);
+          if (browserA2AComplete) {
+            directA2AResult = {
+              name: "a2a_call_agent:social-duoleads",
+              status: "completed",
+              httpStatus: browserA2AStatus,
+              taskId: null,
+              state: "completed-synchronous",
+              agentUrl: "https://social.duoleads.com/a2a",
+              response: browserA2AText
+            };
+          } else if (toolNames.includes("a2a_call_agent")) {
+            try {
+              const fallback = await rpc("tools/call", {
+                name: "a2a_call_agent",
+                arguments: {
+                  agent_url: "https://social.duoleads.com/a2a",
+                  message: "Search recent Hacker News discussions and public posts about open-source AI agent platforms, remote execution providers, browser automation, and genuinely free tiers. Return up to five relevant items with exact URLs, dates, key evidence, and whether the platform requires signup. Prefer primary GitHub repositories and official pricing documentation. Do not invent results.",
+                  timeout_seconds: 45
+                }
+              }, 3, 80000);
+              const fallbackResult = fallback.parsed?.result ?? fallback.parsed;
+              const fallbackText = extractText(fallbackResult);
+              const fallbackComplete = fallback.status >= 200 && fallback.status < 300 &&
+                fallbackText.trim().length > 80 && !fallbackResult?.isError &&
+                !/\b(ERROR|FAILED|TIMED_OUT)\b/i.test(fallbackText);
+              directA2AResult = {
+                name: "a2a_call_agent:social-duoleads",
+                status: fallbackComplete ? "completed" : "failed",
+                httpStatus: fallback.status,
+                taskId: null,
+                state: fallbackComplete ? "completed-synchronous" : "unverified",
+                agentUrl: "https://social.duoleads.com/a2a",
+                response: fallbackText
+              };
+            } catch (error) {
+              directA2AResult = {
+                name: "a2a_call_agent:social-duoleads",
+                status: "failed",
+                taskId: null,
+                state: "failed",
+                agentUrl: "https://social.duoleads.com/a2a",
+                error: String(error).slice(0, 2000)
+              };
+            }
+          }
+
           const callAgentTool = async (name, id) => {
             const spec = selectedSpecs.find(item => item.name === name);
             if (!spec) return { name, status: "failed", error: "Agent Router did not advertise this agent tool" };
@@ -356,7 +456,7 @@ jobs:
             };
           };
 
-          const results = [];
+          const results = directA2AResult ? [directA2AResult] : [];
           for (let index = 0; index < selectedNames.length; index++) {
             const name = selectedNames[index];
             try {
@@ -372,7 +472,7 @@ jobs:
 
           const output = {
             status: "completed",
-            provider: "Agent Router MCP platform agents",
+            provider: "Agent Router MCP platform agents and external A2A registry",
             results,
             advertisedTools: toolNames,
             discovery
