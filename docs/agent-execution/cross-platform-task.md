@@ -1,33 +1,48 @@
-# Native agent federation review
+# Native agent federation independent critique
 
-REQUEST_ID: gpt6-20261112-omniroute-federation-turn-05
-TARGET_AGENT: taskplanner
-SECONDARY_AGENT: researchagent
+REQUEST_ID: omniroute-20261112-agent-execution-review-02
+TARGET_AGENT: constructivecritic
+SECONDARY_AGENT: firstprinciplesanalyst
 CROSS_PLATFORM_ONLY: true
 PUBLIC_SOURCES_ONLY: true
 
 ## Task
 
-This is a fresh provider-native turn. Do not reuse or duplicate the prior SoftwareEngineeringExpert attempt; it returned RUNNING without a recoverable native task ID, and it was not verified complete. Use TaskPlanner for this turn. If the deterministic 36% second-hop is selected, invoke ResearchAgent as an independent child and verify its own response/terminal state.
+You are an independent agent operating outside ChatGPT. Perform a substantive critique of the public OmniRoute/Cognilode federation design and the just-executed remote agent handoff. This is a real agent assignment, not an acknowledgement or an invitation to queue work.
 
-You are an independent task-planning agent hosted on Agent Router, separate from ChatGPT. Produce a source-backed, top-down plan for improving https://github.com/evanbrown3000/OmniRoute-evan as one durable, heterogeneous agent federation.
+Public repository references:
+- https://github.com/evanbrown3000/OmniRoute-evan/tree/release/v3.8.54
+- https://github.com/evanbrown3000/OmniRoute-evan/blob/release/v3.8.54/.github/workflows/agent-router-a2a.yml
+- https://github.com/evanbrown3000/OmniRoute-evan/blob/agent-router-a2a-20261112-03/.github/workflows/agent-router-cross-platform.yml
+- https://github.com/evanbrown3000/OmniRoute-evan/blob/agent-router-a2a-20261112-03/docs/agent-execution/cross-platform-task.md
 
-Review the public repository and its strongest relevant historical branches/commits. Preserve the best existing implementation; do not recommend starting over or creating parallel schedulers, transcript stores, graphs, registries, or vaults.
+The long-term objective is a durable, heterogeneous federation that increases real provider-native agent turns and remote execution capacity. It must not multiply accounts to bypass quotas or create competing control planes.
 
-Focus on:
-1. A per-user-turn durable Work Episode that assigns a primary agent, optional peer agent, provider-native execution, evidence, retries, cancellation, and terminal readback.
-2. A single Pipeline recurrence/lease authority, Networks provider placement/admission, Accounts credential custody, ComputerUseX browser/session/HAR evidence, B4PT0R website-session transport, LibreChat native runtime only when qualified, and OmniRoute inference/MCP/A2A routing.
-3. Cross-provider handoffs where every child turn has its own native provider task/session ID, status/readback endpoint, terminal state, result hash, timestamps, quota/cost receipt, and owner evidence.
-4. Free-tier remote execution and hosted agent capacity. Compare OpenHands, Agno, LangGraph, Letta, PydanticAI, Cloudflare, Vercel, Daytona, E2B, Modal, Browserbase, Browserless, and materially stronger alternatives. Distinguish free inference, free agent turns, free browser minutes, and free remote compute.
-5. A legitimate account-onboarding strategy that adds genuinely independent capabilities without creating duplicate identities to evade quotas or storing credentials in public repositories. Do not create accounts or change credentials.
-6. One live publicly posted paid engineering bounty/contract that fits this repository's capabilities. Verify it is open, unassigned, not already covered by competing PRs, and has an explicit cash/crypto reward. Do not contact anyone, submit a proposal, or create an offering.
+Preserve these canonical ownership boundaries:
+- Pipeline: sole durable work, lease, recurrence, retry, and reconciliation authority.
+- Work Episode: parent/child assignment identity, provider-native IDs, evidence, and terminal completion receipt.
+- Networks & Federation: provider/node admission, capability placement, regions/egress, quota/reset windows and failure domains.
+- Accounts & Secrets: encrypted credential custody, account identity/revision, recovery and attestation.
+- ComputerUseX: remote browser sessions, HAR capture, backend endpoint discovery and session lineage.
+- LibreChat: API-native agent graph/runtime where already supported.
+- B4PT0R: provider-native website sessions only where an API agent surface cannot provide the required native session.
+- OmniRoute: model/inference routing and supported MCP/A2A transport, not a competing global scheduler.
 
-Return a concise but technically deep execution plan with:
-- the strongest historical implementation to promote and why;
-- exact integration boundaries and migration sequence;
-- one recommended free-tier node/agent runtime to qualify next;
-- a durable provider-native completion contract;
-- a recurring remote automation design that does not depend on ChatGPT scheduled tasks;
-- the exact bounty URL and verifiable reward, or say no suitable live bounty exists.
+Observed execution evidence:
+- Agent Router browser and HAR discovery succeeded.
+- SoftwareEngineeringExpert and ResearchAgent recently returned HTTP 502.
+- TaskPlanner completed with a native task ID and terminal COMPLETED state, but produced an execution plan rather than a substantive architecture review.
+- The Agent Forge A2A call returned synchronously without substantive text.
+- A reasoningdelegationhigh invocation returned HTTP 200 and RUNNING, but the first receipt did not expose a task ID, so the workflow correctly refused to claim completion or launch a duplicate second agent.
+- The workflow now searches nested structured content and text for task IDs, polls the same ID up to three times, and retains sanitized HAR plus a summary artifact.
 
-Use public GitHub repositories and official product documentation only. Do not access private memory-corpus content, account records, credentials, or legal/TOS materials. Do not modify application source or run internal tests in this review.
+Analyze:
+1. Critique the native execution/receipt contract. What is the correct provider-neutral representation for accepted, running, terminal, failed, and synchronous tasks? How should task IDs and correlation IDs be distinguished?
+2. Identify the highest-value integration seam between provider-native agent turns, Pipeline, and Work Episode. Preserve one scheduler, one durable task ledger, and one credential authority.
+3. Evaluate current and historical implementations in the public repo; identify which version is most advanced and should be promoted, with exact paths and evidence.
+4. Compare public open-source agent platforms and useful free tiers: Google ADK, Vercel eve, OpenHands, LangGraph, Agno, OpenWOP, Cloudflare Browser Run, Browserbase/Browserless, Modal, Daytona, E2B, Dify, n8n and Activepieces. Distinguish self-hosted source, hosted free allowance, compute credit, browser minutes, agent runs, and durable execution.
+5. Recommend a capability graph and provider-admission model that records endpoint, auth mode, task protocol, schema revision, region, egress, quota/reset, free-tier limits, account revision, health evidence, native task ID, and terminal receipt.
+6. Identify failure modes for 502s, schema drift, task resubmission, stale ownership, prompt injection, untrusted tool descriptions, HAR retention, and false completion claims.
+7. Give one top-level architecture recommendation and a staged promotion sequence. Separate verified facts from inference; cite public source URLs and exact repository paths.
+
+Constraints: public sources only; no account creation, credential access or disclosure, password reuse, quota/rate-limit/billing circumvention, paid calls or provisioning, private-memory access, outreach, product listings, revenue transfers, application-code changes, or internal tests. Do not expose private deployment identifiers or account data. Do not return only a plan: provide your actual critique and evidence.

@@ -48,9 +48,11 @@ jobs:
           const configuredSecondary = taskText.match(/^SECONDARY_AGENT:\s*(\S+)/mi)?.[1] || "constructivecritic";
           if (!requestId) throw new Error("Missing REQUEST_ID");
           const prompt = taskText.split("## Task")[1]?.trim() || taskText;
+          const artifactDir = process.env.GITHUB_WORKSPACE + "/agent-router-artifacts";
+          fs.mkdirSync(artifactDir, { recursive: true });
           const rawHarPath = process.env.RUNNER_TEMP + "/agent-router-native-raw.har";
-          const sanitizedHarPath = process.env.RUNNER_TEMP + "/agent-router-native-sanitized.har";
-          const summaryPath = process.env.RUNNER_TEMP + "/agent-router-native-summary.json";
+          const sanitizedHarPath = artifactDir + "/browser-sanitized.har";
+          const summaryPath = artifactDir + "/summary.json";
 
           const sha256 = value => createHash("sha256").update(String(value)).digest("hex");
           const parseRpc = raw => {
@@ -86,11 +88,51 @@ jobs:
             const match = String(value ?? "").match(/\b(?:STATUS|STATE)\s*[:=]\s*(COMPLETED|SUCCESS|SUCCEEDED|DONE|FAILED|ERROR|CANCELLED|TIMED_OUT|QUEUED|PENDING|RUNNING|IN_PROGRESS|WAITING)\b/i);
             return match?.[1]?.toUpperCase() ?? "";
           };
-          const taskIdOf = value =>
-            value?.structuredContent?.task_id ??
-            value?.structuredContent?.taskId ??
-            value?.structuredContent?.task?.id ??
-            value?.task_id ?? value?.taskId ?? value?.task?.id ?? null;
+          const taskIdOf = value => {
+            const seen = new Set();
+            const visit = node => {
+              if (node === null || node === undefined) return null;
+              if (typeof node === "string") {
+                const raw = node.trim();
+                if (!raw) return null;
+                try {
+                  const parsed = JSON.parse(raw);
+                  const nested = visit(parsed);
+                  if (nested) return nested;
+                } catch {}
+                const match = raw.match(/(?:task[_ -]?id|taskid)\\s*["']?\\s*[:=]\\s*["']?([A-Za-z0-9._:-]{8,})/i);
+                return match?.[1] ?? null;
+              }
+              if (typeof node !== "object" || seen.has(node)) return null;
+              seen.add(node);
+              if (Array.isArray(node)) {
+                for (const item of node) {
+                  const found = visit(item);
+                  if (found) return found;
+                }
+                return null;
+              }
+              for (const key of ["task_id", "taskId", "taskID"]) {
+                if (typeof node[key] === "string" && node[key].trim()) return node[key].trim();
+              }
+              for (const key of ["task", "execution", "job"]) {
+                const found = visit(node[key]);
+                if (found) return found;
+              }
+              for (const [key, item] of Object.entries(node)) {
+                if (/task/i.test(key) && typeof item === "string") {
+                  const found = visit(key + ": " + item);
+                  if (found) return found;
+                }
+              }
+              for (const item of Object.values(node)) {
+                const found = visit(item);
+                if (found) return found;
+              }
+              return null;
+            };
+            return visit(value);
+          };
           const isSuccess = state => /^(COMPLETED|SUCCESS|SUCCEEDED|DONE)$/.test(state);
           const isFailure = state => /^(FAILED|ERROR|CANCELLED|TIMED_OUT|REJECTED)$/.test(state);
           const isPending = state => /^(QUEUED|PENDING|RUNNING|IN_PROGRESS|WAITING)$/.test(state);
@@ -162,23 +204,38 @@ jobs:
               throw new Error("Agent tool returned an error: " + extractText(initial).slice(0, 1200));
             }
 
-            const taskId = taskIdOf(initial);
             const initialText = extractText(initial);
+            let taskId = taskIdOf(initial) ?? taskIdOf(initialText);
             let finalResult = initial;
             let state = stateOf(initial) || stateFromText(initialText);
             let waitedForTask = false;
+            let waitError = null;
+            const diagnostics = {
+              initialKeys: Object.keys(initial ?? {}),
+              structuredKeys: Object.keys(initial?.structuredContent ?? {}),
+              initialState: state || "UNSPECIFIED",
+              initialTaskId: taskId,
+              initialTextPreview: initialText.slice(0, 4500)
+            };
+            console.log("NATIVE_AGENT_CALL_DIAGNOSTIC=" + JSON.stringify({ agent: name, ...diagnostics }));
 
-            if (taskId && !isSuccess(state) && !isFailure(state)) {
-              const waited = await rpc(page, "tools/call", {
-                name: "wait_for_task",
-                arguments: { task_id: taskId, max_wait_seconds: 300 }
-              }, id + 1000, 310000);
-              finalResult = waited.parsed?.result ?? waited.parsed;
-              if (finalResult?.isError || waited.parsed?.isError) {
-                throw new Error("wait_for_task failed for the same task ID " + taskId + ": " + extractText(finalResult).slice(0, 1200));
+            for (let poll = 0; taskId && !isSuccess(state) && !isFailure(state) && poll < 3; poll++) {
+              try {
+                const waited = await rpc(page, "tools/call", {
+                  name: "wait_for_task",
+                  arguments: { task_id: taskId, max_wait_seconds: 300 }
+                }, id + 1000 + poll, 310000);
+                finalResult = waited.parsed?.result ?? waited.parsed;
+                if (finalResult?.isError || waited.parsed?.isError) {
+                  throw new Error("wait_for_task returned an error: " + extractText(finalResult).slice(0, 1200));
+                }
+                taskId = taskIdOf(finalResult) ?? taskId;
+                state = stateOf(finalResult) || stateFromText(extractText(finalResult)) || state;
+                waitedForTask = true;
+              } catch (error) {
+                waitError = String(error).slice(0, 1600);
+                break;
               }
-              state = stateOf(finalResult) || stateFromText(extractText(finalResult)) || state;
-              waitedForTask = true;
             }
 
             const response = extractText(finalResult);
@@ -192,14 +249,16 @@ jobs:
               agent: name,
               httpStatus: call.status,
               nativeTaskId: taskId,
-              initialState: stateOf(initial) || stateFromText(initialText) || "UNSPECIFIED",
+              initialState: diagnostics.initialState,
               terminalState: state || (completed ? "COMPLETED_SYNCHRONOUS_RESPONSE" : "UNVERIFIED"),
               waitedForTask,
+              waitError,
               completionEvidence: taskId ? "same provider-native task ID polled/read back" : "synchronous native tool response; provider exposed no task ID",
               completed,
               pending,
               responseLength: response.length,
               responseSha256: sha256(response),
+              diagnostics,
               response
             };
           };
@@ -245,6 +304,7 @@ jobs:
             const listed = await rpc(page, "tools/list", {}, 1);
             const toolSpecs = listed.parsed?.result?.tools ?? [];
             toolNames = toolSpecs.map(tool => tool.name);
+            console.log("AGENT_ROUTER_ADVERTISED_TOOLS=" + JSON.stringify(toolNames));
             if (!toolNames.includes("discover_agents")) throw new Error("discover_agents not advertised");
             if (!toolNames.includes("wait_for_task")) throw new Error("wait_for_task not advertised");
             const discovery = await rpc(page, "tools/call", {
@@ -448,7 +508,6 @@ jobs:
         with:
           name: agent-router-native-federation-${{ github.run_id }}
           path: |
-            ${{ runner.temp }}/agent-router-native-sanitized.har
-            ${{ runner.temp }}/agent-router-native-summary.json
+            agent-router-artifacts/**
           if-no-files-found: warn
           retention-days: 7
