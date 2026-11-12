@@ -209,3 +209,19 @@ This is a fresh external-agent turn for the current owner request. Prior task re
 9. No new account creation, password reuse, credential collection/disclosure, identity or quota/billing circumvention, paid resource provisioning, outreach, listings, revenue transfers, private-memory-corpus access, application-code changes, or internal tests. Use only public source and public documentation in this review. Respect provider limits and report exact failures rather than inventing completion.
 
 Required evidence: GitHub workflow run ID and status; sanitized HAR artifact name/path and digest; observed backend methods/URLs/statuses; provider/platform and native tool; native task ID and terminal state; independent readback; second-agent result if selected; exact failures; source-backed long-term promotion recommendation.
+
+---
+
+## Authoritative current-turn dispatch — 2026-11-12 — gpt6-20261112-omniroute-native-turn-01
+
+This section is the current direct-owner assignment. Use the existing remote GitHub Actions Playwright workflow `.github/workflows/agent-router-a2a.yml` by virtue of this task-file push. Do not use the owner's personal computer.
+
+1. Capture a fresh sanitized browser HAR for the Agent Router pricing page, DeepWiki public docs, and Agent Router MCP endpoint. Preserve only safe endpoint/method/status/timing metadata and advertised tool names/schemas; do not retain cookies, authorization headers, tokens, or private request/response payloads.
+2. Discover the live MCP tool registry and schemas. Actually dispatch a substantive native agent on a distinct platform. If the provider returns a task ID, poll that same ID until provider-native terminal completion and independently read back the result. Acknowledgement, discovery, HTTP 2xx, inference-only text, or a queued prompt is not completion.
+3. Preserve the workflow's existing 36% secondary-agent selection. If selected, actually execute the secondary native agent and record its independent task identity and terminal result. Never launch a duplicate while an earlier native task remains pending.
+4. Review current public GitHub projects and official documentation/free-tier details for OpenHands, Google A2A, Kilo, LangGraph, Agno, Letta, Cloudflare Agents/Browser Run, Browserbase, Browserless, Daytona, E2B, Modal, Blaxel, Vercel Sandboxes, and stronger alternatives. Distinguish native agent execution, model inference, browser sessions, and remote compute; separate recurring free capacity from trial credits and metered usage.
+5. Inspect the strongest existing and historical implementation, including `agent-router-a2a-20261112-01` and `agent-router-a2a-20261112-02`. Prefer resumable provider-native task execution, same-ID polling, durable Work Episode receipts, idempotency, and independent terminal readback. Preserve the single Pipeline scheduler and all canonical ownership boundaries.
+6. Return the actual GitHub Actions run ID/status, HAR artifact name and digest, backend endpoints and statuses, native provider/tool/task ID/terminal state, readback, secondary-agent result if selected, exact failures, public source URLs, and one highest-value long-term promotion recommendation.
+7. No new account creation, password reuse, credential collection/disclosure, quota/billing/rate-limit bypass, paid provisioning, outreach, listings, revenue transfer, private-memory access, application-code changes, or internal tests in this review. Do not access or disclose private memory-corpus contents. Do not modify gateway source code.
+
+The objective is to increase real, recoverable cross-platform native agent turns and legitimate remote capacity without duplicating Pipeline, Work Episode, Networks, Accounts, ComputerUseX, B4PT0R, LibreChat, or OmniRoute responsibilities.
