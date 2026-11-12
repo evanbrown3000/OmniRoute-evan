@@ -42,7 +42,7 @@ jobs:
           const require = createRequire(process.cwd() + "/package.json");
           const { chromium } = require("playwright");
           const fs = require("node:fs");
-          const { sanitizeHarFile } = require("./.github/scripts/sanitize-har.cjs");
+          const { finalizeHarCapture } = require("./.github/scripts/sanitize-har.cjs");
 
           const harPath = "revenue-bounty-scout.har";
           const queries = [
@@ -147,8 +147,7 @@ jobs:
             }
           }
 
-          await browser.close();
-          const sanitization = sanitizeHarFile(harPath);
+          const sanitization = await finalizeHarCapture({ context, browser, filePath: harPath });
           const har = JSON.parse(fs.readFileSync(harPath, "utf8"));
           const endpoints = [...new Set((har.log?.entries || []).map(entry => {
             try {
