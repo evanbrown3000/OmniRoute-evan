@@ -1,0 +1,193 @@
+name: Revenue bounty scout
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/revenue-bounty-scout.yml"
+  schedule:
+    - cron: "25 15 * * 1-5"
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: revenue-bounty-scout
+  cancel-in-progress: true
+
+jobs:
+  scout:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout existing project
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install browser runtime
+        run: |
+          npm install --no-save playwright
+          npx playwright install --with-deps chromium
+
+      - name: Search existing public bounty and contract postings
+        id: scout
+        run: |
+          node <<'NODE'
+          const { chromium } = require("playwright");
+          const fs = require("node:fs");
+          const { sanitizeHarFile } = require("./.github/scripts/sanitize-har.cjs");
+
+          const harPath = "revenue-bounty-scout.har";
+          const queries = [
+            { source: "GitHub Python bounty issues", q: "is:issue is:open label:bounty language:Python" },
+            { source: "GitHub TypeScript bounty issues", q: "is:issue is:open label:bounty language:TypeScript" },
+            { source: "GitHub Algora bounty issues", q: "is:issue is:open label:algora" },
+            { source: "GitHub funded agent issues", q: 'is:issue is:open "bounty" "agent"' },
+            { source: "GitHub funded browser/MCP issues", q: 'is:issue is:open "bounty" "browser" OR "MCP"' }
+          ];
+
+          const amountPattern = /(?:\$|USD\s?)(\d[\d,]*(?:\.\d{1,2})?)|\b(\d[\d,]*(?:\.\d{1,2})?)\s*(?:USDC|USD|DAI|ETH)\b/i;
+          const bountyLabelPattern = /bounty|algora|reward|funded/i;
+          const candidates = new Map();
+          const apiResults = [];
+
+          const browser = await chromium.launch({ headless: true });
+          const context = await browser.newContext({
+            recordHar: { path: harPath, mode: "full", content: "omit" }
+          });
+          const page = await context.newPage();
+
+          for (const query of queries) {
+            const url = "https://api.github.com/search/issues?q=" +
+              encodeURIComponent(query.q) + "&per_page=20&sort=updated&order=desc";
+            try {
+              const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+              const body = await page.locator("body").innerText({ timeout: 10000 });
+              const data = JSON.parse(body);
+              const items = Array.isArray(data.items) ? data.items : [];
+              apiResults.push({
+                source: query.source,
+                status: response?.status() ?? null,
+                totalCount: data.total_count ?? 0,
+                error: data.message ?? null
+              });
+
+              for (const issue of items) {
+                const labels = (issue.labels || []).map(label => label.name);
+                const text = [issue.title || "", issue.body || ""].join("\n");
+                const reward = text.match(amountPattern)?.[0] || null;
+                const hasBountySignal = labels.some(label => bountyLabelPattern.test(label)) ||
+                  bountyLabelPattern.test(text);
+                if (!hasBountySignal || issue.state !== "open") continue;
+
+                const assignees = (issue.assignees || []).map(user => user.login);
+                const repo = (issue.repository_url || "").replace("https://api.github.com/repos/", "");
+                const updatedAt = issue.updated_at || "";
+                const recent = updatedAt && (Date.now() - Date.parse(updatedAt)) < 90 * 86400000;
+                const score = (reward ? 4 : 0) +
+                  (labels.some(label => /bounty|algora/i.test(label)) ? 3 : 0) +
+                  (assignees.length === 0 ? 2 : 0) +
+                  (recent ? 1 : 0);
+
+                const item = {
+                  title: issue.title,
+                  url: issue.html_url,
+                  repository: repo,
+                  reward,
+                  labels,
+                  assignees,
+                  updatedAt,
+                  score,
+                  bodyExcerpt: (issue.body || "").slice(0, 500)
+                };
+                const previous = candidates.get(issue.html_url);
+                if (!previous || item.score > previous.score) candidates.set(issue.html_url, item);
+              }
+            } catch (error) {
+              apiResults.push({ source: query.source, status: null, error: String(error).slice(0, 300) });
+            }
+          }
+
+          const marketplaceTargets = [
+            { name: "Algora", url: "https://algora.io/bounties" },
+            { name: "UGig", url: "https://ugig.net" },
+            { name: "UGig alternate", url: "https://www.ugig.com" },
+            { name: "Upwork public job search", url: "https://www.upwork.com/nx/search/jobs/?q=python%20agent%20automation&sort=recency" }
+          ];
+          const marketplacePages = [];
+
+          for (const target of marketplaceTargets) {
+            try {
+              const response = await page.goto(target.url, { waitUntil: "domcontentloaded", timeout: 30000 });
+              const title = await page.title().catch(() => "");
+              const pageText = await page.locator("body").innerText({ timeout: 10000 }).catch(() => "");
+              const links = await page.locator("a").evaluateAll(nodes =>
+                nodes.map(node => ({
+                  text: (node.innerText || "").trim().slice(0, 140),
+                  href: node.href
+                })).filter(link => /bounty|issue|job|contract|task/i.test(link.text + " " + link.href)).slice(0, 20)
+              ).catch(() => []);
+              marketplacePages.push({
+                name: target.name,
+                url: target.url,
+                status: response?.status() ?? null,
+                title,
+                textExcerpt: pageText.slice(0, 1200),
+                links
+              });
+            } catch (error) {
+              marketplacePages.push({ name: target.name, url: target.url, status: null, error: String(error).slice(0, 300) });
+            }
+          }
+
+          await browser.close();
+          const sanitization = sanitizeHarFile(harPath);
+          const har = JSON.parse(fs.readFileSync(harPath, "utf8"));
+          const endpoints = [...new Set((har.log?.entries || []).map(entry => {
+            try {
+              const url = new URL(entry.request.url);
+              return entry.request.method + " " + url.host + url.pathname + " -> " + entry.response.status;
+            } catch {
+              return entry.request.method + " [redacted-url] -> " + entry.response.status;
+            }
+          }))];
+
+          const ranked = [...candidates.values()]
+            .sort((a, b) => b.score - a.score || Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
+            .slice(0, 25);
+
+          console.log("REVENUE_BOUNTY_CANDIDATES=" + JSON.stringify(ranked));
+          console.log("REVENUE_API_SEARCHES=" + JSON.stringify(apiResults));
+          console.log("REVENUE_MARKETPLACE_PAGES=" + JSON.stringify(marketplacePages));
+          console.log("REVENUE_BROWSER_ENDPOINTS=" + JSON.stringify(endpoints));
+          console.log("REVENUE_HAR_SANITIZATION=" + JSON.stringify(sanitization));
+          NODE
+
+      - name: Retain sanitized revenue research HAR
+        id: upload_har
+        if: always() && steps.scout.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: revenue-bounty-scout-${{ github.run_id }}
+          path: revenue-bounty-scout.har
+          if-no-files-found: warn
+          retention-days: 3
+
+      - name: Delete superseded revenue research artifacts
+        if: always() && steps.upload_har.outcome == 'success'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const keepName = `revenue-bounty-scout-${context.runId}`;
+            const artifacts = await github.paginate(github.rest.actions.listArtifactsForRepo, { owner, repo, per_page: 100 });
+            const stale = artifacts.filter((artifact) => artifact.name.startsWith("revenue-bounty-scout-") && artifact.name !== keepName);
+            for (const artifact of stale) {
+              await github.rest.actions.deleteArtifact({ owner, repo, artifact_id: artifact.id });
+              core.info(`Deleted superseded revenue research artifact ${artifact.id}`);
+            }
