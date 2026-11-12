@@ -490,15 +490,15 @@ jobs:
               value?.status ??
               ""
             ).toUpperCase();
-            let state = readState(result) || responseText.match(/STATUS:\s*([A-Z_-]+)/i)?.[1]?.toUpperCase() || "";
-            const pending = value => /RUNNING|IN_PROGRESS|QUEUED|PENDING|WAITING|INPUT_REQUIRED|STILL RUNNING/.test(
-              readState(value) + " " + extractText(value).toUpperCase()
-            );
-            const terminalSuccess = value => /^(COMPLETED|SUCCESS|SUCCEEDED|DONE)$/.test(readState(value))
-              || /STATUS:\s*(COMPLETED|SUCCESS|SUCCEEDED|DONE)/i.test(extractText(value));
+            const readStatusLine = value => extractText(value).match(/^\s*(?:STATUS|STATE)\s*[:=]\s*([A-Z_-]+)\s*$/im)?.[1]?.toUpperCase() ?? "";
+            const providerState = value => readState(value) || readStatusLine(value);
+            let state = providerState(result);
+            // Lifecycle classification uses provider-declared state only. Agent prose can
+            // legitimately discuss pending work even after the provider task is complete.
+            const pending = value => /^(RUNNING|IN_PROGRESS|QUEUED|PENDING|WAITING|INPUT_REQUIRED|STILL RUNNING)$/.test(providerState(value));
+            const terminalSuccess = value => /^(COMPLETED|SUCCESS|SUCCEEDED|DONE)$/.test(providerState(value));
             const terminalFailure = value => Boolean(value?.isError)
-              || /^(FAILED|ERROR|CANCELLED|TIMED_OUT)$/.test(readState(value))
-              || /STATUS:\s*(FAILED|ERROR|CANCELLED|TIMED_OUT)/i.test(extractText(value));
+              || /^(FAILED|ERROR|CANCELLED|TIMED_OUT)$/.test(providerState(value));
             if (taskId && !terminalSuccess(result) && !terminalFailure(result)) {
               waitedForTask = true;
               // The workflow has a 25-minute ceiling. Keep one native task alive and
@@ -511,7 +511,7 @@ jobs:
                 }, id + 100 + poll, 130000);
                 result = waited.parsed?.result ?? waited.parsed;
                 responseText = extractText(result);
-                state = readState(result) || responseText.match(/STATUS:\s*([A-Z_-]+)/i)?.[1]?.toUpperCase() || "";
+                state = providerState(result);
                 const success = terminalSuccess(result);
                 const failure = terminalFailure(result);
                 const stillRunning = pending(result);
@@ -556,24 +556,24 @@ jobs:
               httpStatus = waited.status;
               const result = waited.parsed?.result ?? waited.parsed;
               responseText = extractText(result);
-              state = String(
+              const structuredState = String(
                 result?.structuredContent?.task?.state
                 ?? result?.structuredContent?.state
                 ?? result?.structuredContent?.status
                 ?? result?.task?.state
                 ?? result?.state
                 ?? result?.status
-                ?? responseText.match(/STATUS:\s*([A-Z_-]+)/i)?.[1]
-                ?? state
+                ?? ""
               ).toUpperCase();
-              const success = /^(COMPLETED|SUCCESS|SUCCEEDED|DONE)$/.test(state)
-                || /STATUS:\s*(COMPLETED|SUCCESS|SUCCEEDED|DONE)/i.test(responseText);
-              const failure = /^(FAILED|ERROR|CANCELLED|TIMED_OUT)$/.test(state)
-                || /STATUS:\s*(FAILED|ERROR|CANCELLED|TIMED_OUT)/i.test(responseText);
-              const pending = /RUNNING|IN_PROGRESS|QUEUED|PENDING|WAITING|INPUT_REQUIRED|STILL RUNNING/.test(state + " " + responseText.toUpperCase());
-              console.log("TASK_RESUME_POLL=" + JSON.stringify({ name, taskId, poll: poll + 1, state, success, failure, pending }));
-              if (success && !pending) return { name, status: "completed", taskId, state, httpStatus, response: responseText, waitedForTask: true };
-              if (failure && !pending) return { name, status: "failed", taskId, state, httpStatus, response: responseText, waitedForTask: true };
+              const statusLine = responseText.match(/^\s*(?:STATUS|STATE)\s*[:=]\s*([A-Z_-]+)\s*$/im)?.[1]?.toUpperCase() ?? "";
+              state = structuredState || statusLine || state;
+              const stateSource = structuredState ? "structured-provider-state" : statusLine ? "provider-status-line" : "unverified";
+              const success = /^(COMPLETED|SUCCESS|SUCCEEDED|DONE)$/.test(state);
+              const failure = /^(FAILED|ERROR|CANCELLED|TIMED_OUT)$/.test(state);
+              const pending = /^(RUNNING|IN_PROGRESS|QUEUED|PENDING|WAITING|INPUT_REQUIRED|STILL RUNNING)$/.test(state);
+              console.log("TASK_RESUME_POLL=" + JSON.stringify({ name, taskId, poll: poll + 1, state, stateSource, success, failure, pending }));
+              if (success) return { name, status: "completed", taskId, state, stateSource, httpStatus, response: responseText, waitedForTask: true };
+              if (failure) return { name, status: "failed", taskId, state, stateSource, httpStatus, response: responseText, waitedForTask: true };
             }
             return { name, status: "incomplete", taskId, state, httpStatus, response: responseText, waitedForTask: true };
           };
