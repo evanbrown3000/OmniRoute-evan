@@ -36,8 +36,8 @@ jobs:
     env:
       BASE_REF: ${{ github.event.inputs.base_ref || 'release/v3.8.54' }}
       HEAD_REF: ${{ github.event.inputs.head_ref || 'agent-router-a2a-20261112-06' }}
-      KILO_PROVIDER: kilocode
-      KILOCODE_MODEL: minimax/minimax-m2.1:free
+      KILO_PROVIDER: kilo
+      KILO_MODEL: minimax/minimax-m2.1:free
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -99,7 +99,17 @@ jobs:
         run: |
           npm install --global @kilocode/cli
           kilo --version | tee artifacts/source/kilo-version.txt
-          kilo models kilocode --verbose --refresh > artifacts/source/kilo-model-catalog.txt 2>&1 || true
+          kilo models kilo --verbose --refresh > artifacts/source/kilo-model-catalog.txt 2>&1 || true
+          if grep -Fq 'minimax/minimax-m2.1:free' artifacts/source/kilo-model-catalog.txt; then
+            echo 'KILO_MODEL_ID=kilo/minimax/minimax-m2.1:free' >> "$GITHUB_ENV"
+          elif grep -Fq 'z-ai/glm-5:free' artifacts/source/kilo-model-catalog.txt; then
+            echo 'KILO_MODEL_ID=kilo/z-ai/glm-5:free' >> "$GITHUB_ENV"
+          elif grep -Fq 'cohere/north-mini-code:free' artifacts/source/kilo-model-catalog.txt; then
+            echo 'KILO_MODEL_ID=kilo/cohere/north-mini-code:free' >> "$GITHUB_ENV"
+          else
+            echo 'No supported :free Kilo Gateway model appeared in the live CLI catalog.'
+            exit 1
+          fi
 
       - name: Execute independent Kilo architecture agent
         id: kilo
@@ -109,7 +119,7 @@ jobs:
           timeout 600 kilo run \
             --auto \
             --agent omniroute-reviewer \
-            --model kilocode/minimax/minimax-m2.1:free \
+            --model "$KILO_MODEL_ID" \
             --title "OmniRoute historical branch promotion review" \
             --format json \
             "Read artifacts/source/review-context.md and all four line-numbered source snapshots under artifacts/source/. Compare release/v3.8.54 with agent-router-a2a-20261112-06. Produce a source-backed engineering decision, not a generic plan. Cite at least two exact file:line references from each relevant branch. Explicitly evaluate the 36% independent secondary branch, primary-first state machine, same-ID terminal polling, resume semantics, semantic quality gates, HAR evidence, external A2A distinction, and the conflict between any GitHub cron schedule and Pipeline's sole-scheduler ownership. State whether the historical workflow should be promoted, what must change before promotion, and what must remain separate. Do not modify files, run tests, or use shell." \
