@@ -1,0 +1,397 @@
+name: One-shot cross-platform agent review
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - release/v3.8.54
+    paths:
+      - ".github/workflows/agent-router-a2a.yml"
+
+permissions:
+  actions: write
+
+concurrency:
+  group: agent-router-a2a-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  agent-review:
+    runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright:v1.65.0-resolute
+      options: --ipc=host
+    timeout-minutes: 12
+    steps:
+      - name: Install matching Playwright package
+        run: |
+          node --version
+          npm --version
+          mkdir -p "$RUNNER_TEMP/agent-router"
+          cd "$RUNNER_TEMP/agent-router"
+          npm init -y >/dev/null
+          npm install --no-save playwright@1.65.0
+
+      - name: Capture browser HAR and invoke native A2A agents
+        working-directory: ${{ runner.temp }}/agent-router
+        run: |
+          node --input-type=module <<'NODE'
+          import { chromium } from "playwright";
+          import fs from "node:fs";
+
+          const harPath = `${process.env.RUNNER_TEMP}/agent-router.har`;
+          const browser = await chromium.launch({ headless: true });
+          const context = await browser.newContext({
+            recordHar: { path: harPath, mode: "full", content: "embed" }
+          });
+          const page = await context.newPage();
+          let pricingStatus = null;
+          let pricingUrl = null;
+          let pricingTitle = "";
+          let pricingText = "";
+          let browserMcpProbe = null;
+          const deepwikiPages = [];
+
+          try {
+            const pricing = await page.goto("https://www.agent-router.org/pricing", {
+              waitUntil: "domcontentloaded",
+              timeout: 30000
+            });
+            pricingStatus = pricing?.status() ?? null;
+            pricingUrl = page.url();
+            pricingTitle = await page.title();
+            pricingText = (await page.locator("body").innerText().catch(() => "")).slice(0, 2500);
+
+            for (const url of [
+              "https://deepwiki.com/cheaper-inference/OmniRoute",
+              "https://deepwiki.com/evanbrown3000/OmniRoute-evan"
+            ]) {
+              try {
+                const response = await page.goto(url, {
+                  waitUntil: "domcontentloaded",
+                  timeout: 30000
+                });
+                deepwikiPages.push({
+                  url,
+                  finalUrl: page.url(),
+                  status: response?.status() ?? null,
+                  title: await page.title(),
+                  excerpt: (await page.locator("body").innerText().catch(() => "")).slice(0, 1800)
+                });
+              } catch (error) {
+                deepwikiPages.push({ url, error: String(error).slice(0, 500) });
+              }
+            }
+
+            await page.goto("https://agent-router.org/", {
+              waitUntil: "domcontentloaded",
+              timeout: 30000
+            });
+            browserMcpProbe = await page.evaluate(async () => {
+              const response = await fetch("/mcp-http/mcp", {
+                method: "POST",
+                headers: {
+                  "content-type": "application/json",
+                  "accept": "application/json, text/event-stream"
+                },
+                body: JSON.stringify({
+                  jsonrpc: "2.0",
+                  id: "browser-har-discovery",
+                  method: "tools/list",
+                  params: {}
+                })
+              });
+              return {
+                status: response.status,
+                body: (await response.text()).slice(0, 2000)
+              };
+            });
+          } finally {
+            await context.close();
+            await browser.close();
+          }
+
+          const har = JSON.parse(fs.readFileSync(harPath, "utf8"));
+          const requests = har.log.entries
+            .map(entry => ({
+              method: entry.request.method,
+              url: entry.request.url,
+              status: entry.response.status
+            }))
+            .filter(entry => /agent-router|mcp-http|a2a/i.test(entry.url))
+            .slice(0, 40);
+          console.log("BROWSER_HAR_EVIDENCE=" + JSON.stringify({
+            pricingStatus,
+            pricingUrl,
+            pricingTitle,
+            pricingSaysNoSignup: /no sign-up/i.test(pricingText),
+            pricingExcerpt: pricingText,
+            browserMcpProbe,
+            deepwikiPages,
+            backendRequests: requests
+          }));
+
+          const endpoint = "https://agent-router.org/mcp-http/mcp";
+          const rpc = async (method, params, id, timeoutMs = 55000) => {
+            const response = await fetch(endpoint, {
+              method: "POST",
+              headers: {
+                "content-type": "application/json",
+                "accept": "application/json, text/event-stream"
+              },
+              body: JSON.stringify({ jsonrpc: "2.0", id, method, params }),
+              signal: AbortSignal.timeout(timeoutMs)
+            });
+            const raw = await response.text();
+            let parsed;
+            try {
+              parsed = JSON.parse(raw);
+            } catch {
+              const dataLine = raw.split("\n").find(line => line.startsWith("data:"));
+              if (dataLine) {
+                try { parsed = JSON.parse(dataLine.slice(5).trim()); } catch {}
+              }
+            }
+            if (!response.ok) {
+              throw new Error(`MCP HTTP ${response.status}: ${raw.slice(0, 1200)}`);
+            }
+            if (parsed?.error) {
+              throw new Error(`MCP ${method} error: ${JSON.stringify(parsed.error).slice(0, 1200)}`);
+            }
+            return { status: response.status, parsed, raw };
+          };
+
+          const toolsResponse = await rpc("tools/list", {}, 1);
+          const toolSpecs = toolsResponse.parsed?.result?.tools ?? [];
+          const toolNames = toolSpecs.map(tool => tool.name);
+          const primaryName = toolNames.includes("softwareengineeringexpert")
+            ? "softwareengineeringexpert"
+            : toolNames.includes("researchagent")
+              ? "researchagent"
+              : null;
+          if (!primaryName) {
+            throw new Error("Agent Router did not advertise a supported native agent tool.");
+          }
+          const secondaryName = primaryName === "softwareengineeringexpert"
+            ? "researchagent"
+            : "softwareengineeringexpert";
+          const selectedNames = [primaryName];
+          const additionalAgentPrompted = Math.random() < 0.36;
+          if (additionalAgentPrompted && toolNames.includes(secondaryName)) {
+            selectedNames.push(secondaryName);
+          }
+          console.log("ADDITIONAL_AGENT_PROMPT=" + JSON.stringify({
+            probability: 0.36,
+            selected: additionalAgentPrompted,
+            tool: selectedNames[1] ?? null
+          }));
+          const selectedSpecs = toolSpecs.filter(tool => selectedNames.includes(tool.name));
+          console.log("AGENT_TOOL_SCHEMAS=" + JSON.stringify(selectedSpecs.map(tool => ({
+            name: tool.name,
+            inputSchema: tool.inputSchema
+          }))));
+
+          const prompt = [
+            "You are an independent software-systems architect and researcher. Review the verified OmniRoute implementation inventory below and provide a source-backed recommendation.",
+            "Repository: https://github.com/evanbrown3000/OmniRoute-evan/tree/release/v3.8.54",
+            "Existing implementation: provider-node API includes GET/POST /api/provider-nodes and POST /api/provider-nodes/validate; isolated Chromium/VNC/CDP provider-login sessions use management-authenticated /api/vnc-session routes, localhost-bound browser/CDP ports, up to four concurrent sessions, non-persistent profiles by default, ten-minute idle timeout and thirty-minute maximum lifetime; AgentBridge exposes IDE-agent routing and mappings; the Devin Claude-compatible agentic bridge supplies a tool-capable provider and is separate from the local ACP CLI registry; routing already includes a large provider catalog, free-tier evidence, quota-aware selection, health and failover.",
+            "Verified boundaries: the shared browser-pool is an internal Playwright/Chromium pool for provider web interactions, distinct from the VNC login sessions; neither should be described as a general hosted browser provider without verifying the deployed runtime. The A2A server, ACP local CLI registry, AgentBridge, CloudAgent integrations, provider-node inference endpoints, and VNC browser sessions are separate execution surfaces.",
+            "Goal: expand durable remote execution providers and browser sessions without starting from scratch. Distinguish (1) model inference endpoints, (2) native agent turns with provider-native completion evidence, and (3) browser sessions with HAR/backend endpoint evidence.",
+            "Use DeepWiki at https://deepwiki.com/cheaper-inference/OmniRoute and https://deepwiki.com/evanbrown3000/OmniRoute-evan when available; cross-check its claims against current source code and public documentation.",
+            "Compare current public options including Agent Router MCP/A2A, OpenWOP, OpenHands Cloud, Cloudflare Browser Run, Browserbase, Browserless and any stronger free-tier alternatives you can verify.",
+            "If the registry exposes a native agent on a distinct provider platform, actually dispatch one follow-on turn and wait for its provider-native completion/readback. Include platform, tool name, task ID, final status, and concise result; queued/accepted acknowledgements do not count. If unavailable, identify the exact missing capability.",
+            "Recommend one long-term design and the strongest existing architecture to promote; identify minimal integration points, provider failover boundaries, durable identity/secret boundaries, and how to prove a turn actually completed rather than merely being queued.",
+            "Do not modify code, create accounts, run tests, assume a free tier without current evidence, or invent successful provider executions. Include direct source URLs and concise reasoning.",
+            "The related private agent-memory-corpus store is restricted to rendered conversation Markdown and summary reports; GraphX remains the graph authority. Link conversations to their summaries, summaries to higher-level summaries, and evidence nodes to source commits, provider identities, browser sessions, HAR artifacts, native task IDs, and deployment versions using sparse typed edges. Do not create a competing graph store or add operational receipts/metadata to the corpus."
+          ].join("\n\n");
+
+          const repoUrl = "https://github.com/evanbrown3000/OmniRoute-evan/tree/release/v3.8.54";
+          const resolveSchema = (schema, root, depth = 0) => {
+            if (!schema || depth > 10) return schema ?? {};
+            if (schema.$ref) {
+              const target = schema.$ref.replace(/^#\//, "").split("/").reduce((value, part) => {
+                const key = part.replace(/~1/g, "/").replace(/~0/g, "~");
+                return value?.[key];
+              }, root);
+              return resolveSchema(target, root, depth + 1);
+            }
+            if (schema.allOf?.length) {
+              const merged = { ...schema, properties: { ...(schema.properties ?? {}) }, required: [...(schema.required ?? [])] };
+              for (const part of schema.allOf) {
+                const resolved = resolveSchema(part, root, depth + 1);
+                Object.assign(merged.properties, resolved.properties ?? {});
+                merged.required.push(...(resolved.required ?? []));
+              }
+              merged.required = [...new Set(merged.required)];
+              return merged;
+            }
+            if (schema.oneOf?.length) return resolveSchema(schema.oneOf[0], root, depth + 1);
+            if (schema.anyOf?.length) return resolveSchema(schema.anyOf[0], root, depth + 1);
+            return schema;
+          };
+
+          const buildSchemaValue = (inputSchema, root, key, task, taskId = null) => {
+            const schema = resolveSchema(inputSchema, root);
+            const name = String(key ?? "").toLowerCase();
+            if (schema.const !== undefined) return schema.const;
+            if (Array.isArray(schema.enum) && schema.enum.length) return schema.enum[0];
+            if (schema.type === "object" || schema.properties) {
+              const properties = schema.properties ?? {};
+              if (!Object.keys(properties).length) {
+                return {
+                  prompt: task,
+                  task,
+                  query: task,
+                  repository_url: repoUrl,
+                  repository: repoUrl
+                };
+              }
+              const required = schema.required ?? Object.keys(properties);
+              const value = {};
+              for (const child of required) {
+                if (properties[child]) value[child] = buildSchemaValue(properties[child], root, child, task, taskId);
+              }
+              return value;
+            }
+            if (schema.type === "array") return schema.default ?? [];
+            if (schema.type === "string") {
+              if (taskId && /task.*id|id.*task/.test(name)) return taskId;
+              if ((/repo|repository|github|source/.test(name) && /url|uri|link/.test(name)) ||
+                  ["repo", "repository", "source_url"].includes(name)) return repoUrl;
+              if (/timeout|wait|seconds/.test(name)) return String(180);
+              return task;
+            }
+            if (schema.type === "integer" || schema.type === "number") {
+              if (/timeout|wait|seconds/.test(name)) return 180;
+              if (/limit|count|top.?k|number|num/.test(name)) return 8;
+              return schema.default ?? 5;
+            }
+            if (schema.type === "boolean") return schema.default ?? false;
+            if (schema.default !== undefined) return schema.default;
+            return task;
+          };
+
+          const buildArgs = (spec, task = prompt, taskId = null) => {
+            const schema = spec.inputSchema ?? {};
+            return buildSchemaValue(schema, schema, "", task, taskId);
+          };
+
+          let discovery = null;
+          const discoverySpec = toolSpecs.find(item => item.name === "discover_agents");
+          if (discoverySpec) {
+            const discoveryArgs = buildArgs(
+              discoverySpec,
+              "Find active platform agents for an independent software architecture review of the OmniRoute repository, with emphasis on remote browser sessions and provider-native execution."
+            );
+            const discoveryResponse = await rpc(
+              "tools/call",
+              { name: "discover_agents", arguments: discoveryArgs },
+              2
+            );
+            discovery = discoveryResponse.parsed?.result ?? discoveryResponse.parsed;
+            console.log("AGENT_DISCOVERY_RESULT=" + JSON.stringify(discovery));
+          }
+
+          const extractText = (result) => {
+            const parts = result?.content ?? [];
+            return parts.filter(item => item.type === "text").map(item => item.text).join("\n")
+              || JSON.stringify(result?.structuredContent ?? result ?? {});
+          };
+
+          const callAgentTool = async (name, id) => {
+            const spec = selectedSpecs.find(item => item.name === name);
+            if (!spec) return { name, status: "failed", error: "Agent Router did not advertise this agent tool" };
+            const args = buildArgs(spec);
+            const initial = await rpc("tools/call", { name, arguments: args }, id);
+            let result = initial.parsed?.result ?? initial.parsed;
+            let responseText = extractText(result);
+            let taskId = result?.structuredContent?.task_id
+              || result?.task_id
+              || result?.task?.id
+              || responseText.match(/task[_ -]?id\\s*[:=]\\s*([A-Za-z0-9._:-]+)/i)?.[1]
+              || null;
+            const readState = value => String(
+              value?.structuredContent?.state ??
+              value?.structuredContent?.status ??
+              value?.state ??
+              value?.status ??
+              ""
+            ).toUpperCase();
+            let state = readState(result) || responseText.match(/STATUS:\\s*([A-Z_-]+)/i)?.[1]?.toUpperCase() || "";
+            const pending = value => /RUNNING|IN_PROGRESS|QUEUED|PENDING|WAITING|INPUT_REQUIRED/.test(
+              readState(value) + " " + extractText(value)
+            );
+            if (taskId && (pending(result) || !/COMPLETED|SUCCESS|SUCCEEDED|DONE/.test(state))) {
+              const waitSpec = toolSpecs.find(item => item.name === "wait_for_task");
+              if (waitSpec) {
+                const waitArgs = buildArgs(waitSpec, prompt, taskId);
+                const waited = await rpc("tools/call", {
+                  name: "wait_for_task",
+                  arguments: waitArgs
+                }, id + 100, 210000);
+                result = waited.parsed?.result ?? waited.parsed;
+                responseText = extractText(result);
+                state = readState(result) || responseText.match(/STATUS:\\s*([A-Z_-]+)/i)?.[1]?.toUpperCase() || state;
+              }
+            }
+            const isPending = /RUNNING|IN_PROGRESS|QUEUED|PENDING|WAITING|INPUT_REQUIRED/.test(
+              state + " " + responseText
+            );
+            const failed = Boolean(result?.isError || initial.parsed?.isError || initial.parsed?.error)
+              || /STATUS:\\s*(FAILED|ERROR|CANCELLED|TIMED_OUT)|\\b(ERROR|FAILED)\\b/i.test(responseText)
+              || /^(FAILED|ERROR|CANCELLED|TIMED_OUT)$/.test(state);
+            const explicitComplete = /STATUS:\\s*(COMPLETED|SUCCESS|SUCCEEDED|DONE)/i.test(responseText)
+              || /^(COMPLETED|SUCCESS|SUCCEEDED|DONE)$/.test(state);
+            const directComplete = !taskId && responseText.trim().length > 200 && !isPending && !failed;
+            const isComplete = !failed && !isPending && (explicitComplete || directComplete);
+            return {
+              name,
+              status: isComplete ? "completed" : failed ? "failed" : "incomplete",
+              httpStatus: initial.status,
+              taskId: taskId ?? null,
+              state: state || (isComplete ? "completed-response" : "unverified"),
+              response: responseText
+            };
+          };
+
+          const results = [];
+          for (let index = 0; index < selectedNames.length; index++) {
+            const name = selectedNames[index];
+            try {
+              results.push(await callAgentTool(name, 10 + index));
+            } catch (error) {
+              results.push({ name, status: "failed", error: String(error).slice(0, 2000) });
+            }
+          }
+          const completed = results.filter(item => item.status === "completed" && item.response?.length > 80);
+          if (!completed.length) {
+            throw new Error("No platform-native agent completed: " + JSON.stringify(results));
+          }
+
+          const output = {
+            status: "completed",
+            provider: "Agent Router MCP platform agents",
+            results,
+            advertisedTools: toolNames,
+            discovery
+          };
+          console.log("NATIVE_AGENT_RESULT=" + JSON.stringify(output));
+          fs.appendFileSync(
+            process.env.GITHUB_STEP_SUMMARY,
+            "## Native cross-platform agent execution\n\n" +
+            results.map(item => "### " + item.name + "\n\n" +
+              "- Status: " + (item.status ?? "failed") + "\n" +
+              (item.taskId ? "- Native task ID: " + item.taskId + "\n" : "") +
+              (item.response ? "\n" + item.response.slice(0, 12000) : "\n" + (item.error ?? "")) + "\n"
+            ).join("\n")
+          );
+          NODE
+
+      - name: Retain browser HAR artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-router-browser-har-${{ github.run_id }}
+          path: ${{ runner.temp }}/agent-router.har
+          if-no-files-found: warn
+          retention-days: 7
