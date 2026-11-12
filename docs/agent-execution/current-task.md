@@ -276,3 +276,21 @@ This assignment is the active direct-owner turn. Use the existing hosted executi
 8. Keep public repository and external-agent prompts free of passwords, API keys, session cookies, private account data, and private memory-corpus contents. Do not create accounts merely to multiply quotas or bypass provider limits. No paid provisioning, outreach, listings, revenue transfers, application-code changes, or internal tests in this turn.
 
 Required evidence: exact workflow run ID/status; sanitized HAR artifact and digest; observed methods, endpoints and statuses; provider/platform, native tool, task ID, terminal state and readback; secondary result if selected; exact route failures; public source URLs; and one concrete promotion recommendation.
+
+
+---
+
+## Direct-owner native federation execution — 2026-11-12 — gpt6-20261112-omniroute-federation-expansion-10
+
+This section is the current direct-owner assignment. Use the existing GitHub-hosted Playwright workflow `.github/workflows/agent-router-a2a.yml` through this task-file update. Do not use the owner's personal computer.
+
+1. Capture a fresh sanitized HAR for Agent Router pricing, public DeepWiki pages, and the Agent Router MCP endpoint. Retain only safe request metadata, endpoint/method/status/timing, tool names, and schema summaries; exclude cookies, authorization headers, tokens, private prompts, and private payloads.
+2. Actually invoke a useful provider-native agent turn on a distinct agent platform. Prefer an agent/tool that is operationally healthy and relevant to software architecture, provider-native task execution, or free-tier infrastructure. Do not repeatedly retry an endpoint that has just returned HTTP 502 when another advertised provider-native agent is available.
+3. If the provider returns a native task ID, poll that exact ID until provider-declared terminal success or failure and independently read back the result. Never treat discovery, HTTP 2xx, queue acceptance, or generic text as proof of a useful completed task.
+4. Preserve the existing 36% secondary-agent selection. If selected, actually invoke the second agent, preserve its independent provider/tool/task identity, and read back its terminal result. Do not start a duplicate while any earlier task remains pending.
+5. Review the strongest existing and historical OmniRoute implementations, including branches `agent-router-a2a-20261112-01` through `-05`. Evaluate provider selection, native execution, same-ID resume/poll, terminal readback, duplicate suppression, 36% secondary delegation, and durable evidence. Recommend the strongest proven implementation to promote rather than rewriting.
+6. Research public GitHub repositories and current official documentation/free-tier details for OpenHands, Google A2A, Agno, LangGraph, Letta, Kilo, Cloudflare Agents/Browser Run, Browserbase, Browserless, Daytona, E2B, Modal, Blaxel, Vercel Sandboxes, and stronger alternatives. Distinguish agent execution from inference, browser sessions, and remote compute. Separate recurring free capacity from one-time credits and metered usage.
+7. Preserve ownership: Pipeline owns recurrence/leases/retries; Work Episode owns assignments, native task identity, handoffs, and per-turn evidence; Networks owns provider/node admission and placement; Accounts owns encrypted credential custody; ComputerUseX owns browser sessions/HAR; B4PT0R owns provider-native website-session transport; LibreChat owns its qualified agent runtime; OmniRoute owns inference and A2A/MCP routing; Secretary selects qualified providers without becoming a scheduler.
+8. Use existing legitimate free capacity first. Do not create accounts, reuse passwords, collect or disclose credentials, bypass quotas/rate limits/identity verification/billing controls, provision paid resources, access private memory-corpus contents, perform outreach, publish listings, transfer funds, modify gateway source code, or run internal tests.
+
+Required evidence: workflow run ID/status; sanitized HAR artifact name/path/digest; observed backend endpoints/methods/statuses; provider/platform and native tool; native task ID and terminal state; independent readback; secondary-agent result if selected; exact failures; public primary-source URLs; exact source paths; one highest-value long-term architecture promotion recommendation.
