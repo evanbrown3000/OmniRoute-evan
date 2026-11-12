@@ -37,7 +37,9 @@ jobs:
       - name: Search existing public bounty and contract postings
         id: scout
         run: |
-          node <<'NODE'
+          node --input-type=module <<'NODE'
+          import { createRequire } from "node:module";
+          const require = createRequire(process.cwd() + "/package.json");
           const { chromium } = require("playwright");
           const fs = require("node:fs");
           const { sanitizeHarFile } = require("./.github/scripts/sanitize-har.cjs");
