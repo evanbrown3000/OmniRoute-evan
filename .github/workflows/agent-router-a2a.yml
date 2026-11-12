@@ -9,6 +9,7 @@ on:
       - release/v3.8.54
     paths:
       - ".github/workflows/agent-router-a2a.yml"
+      - "docs/agent-execution/current-task.md"
 
 permissions:
   actions: write
@@ -245,6 +246,13 @@ jobs:
             inputSchema: tool.inputSchema
           }))));
 
+          const taskUrl = `https://raw.githubusercontent.com/${process.env.GITHUB_REPOSITORY}/${process.env.GITHUB_SHA}/docs/agent-execution/current-task.md`;
+          const taskResponse = await fetch(taskUrl, { signal: AbortSignal.timeout(15000) });
+          if (!taskResponse.ok) {
+            throw new Error(`Unable to load the current agent task: HTTP ${taskResponse.status}`);
+          }
+          const currentTask = await taskResponse.text();
+
           const prompt = [
             "You are an independent software-systems architect and researcher. Review the verified OmniRoute implementation inventory below and provide a source-backed recommendation.",
             "Repository: https://github.com/evanbrown3000/OmniRoute-evan/tree/release/v3.8.54",
@@ -258,6 +266,7 @@ jobs:
             "Do not modify code, create accounts, run tests, assume a free tier without current evidence, or invent successful provider executions. Include direct source URLs and concise reasoning.",
             "An adjacent private memory system exists. Do not attempt to access, quote, or disclose private repository contents. At the architecture level, preserve a clean boundary between canonical conversation/summary storage and the existing graph authority. Use the existing graph system for typed links among conversations, summaries, providers, browser sessions, HAR captures, native task IDs, and deployment evidence. Do not create a competing graph store or place operational receipts, credentials, or private metadata in public repositories.",
             ""
+            "Current turn objective:\n" + currentTask,
           ].join("\n\n");
 
           const repoUrl = "https://github.com/evanbrown3000/OmniRoute-evan/tree/release/v3.8.54";
