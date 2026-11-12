@@ -1,6 +1,6 @@
 # Active agent-execution assignment
 
-**Request ID:** `gpt6-20261112-omniroute-federation-12`
+**Request ID:** `gpt6-20261112-omniroute-federation-13`
 **Date:** 2026-11-12
 **Mode:** read-only architecture review plus one real remote native-agent execution.
 
@@ -57,11 +57,11 @@ Research current public GitHub projects and official provider documentation for 
 - Any pending-task `RESUME_TASK` directive.
 - Source-backed comparison and one long-term promotion recommendation with exact paths, owner boundaries, integration seam, and unresolved blockers.
 
+## Fresh native-agent dispatch — 2026-11-12
 
-## Same-task independent readback continuation — 2026-11-12
+The completed task `b5aa7a60-ec6c-440e-b750-b861f1ad3ec2` was independently read back in runs 60 and 61 and is closed. Its generic response did not satisfy the architecture-review objective. This assignment requires a genuinely new provider-native task ID; do not resume or reuse the closed task.
 
-Turn 12 trigger: independently re-read the exact existing native task below; do not dispatch a replacement native task. The existing workflow's no-charge external A2A discovery/agent invocation remains enabled. Preserve exact provider-native task identity and terminal readback.
+Invoke the SoftwareEngineeringExpert primary agent for a source-backed review of the exact A2A task manager, CloudAgent adapter, provider-node, VNC/browser-session, and MCP integration paths. Preserve the deterministic 36% secondary-agent selection; if selected, dispatch and read back the peer as a separate provider-native task. If the primary fails terminally, record the exact error and continue to the next supported agent only after the original task is terminal. Never launch a duplicate while a task remains unresolved.
 
-The first native Agent Router run returned this provider task as `COMPLETED`. Re-read the exact same native task in a separate workflow run; do not dispatch a replacement task.
+The earlier Social Media Data API A2A exchange was only a paid-service catalog. Do not call any paid x402 skill. Invoke a distinct external A2A successor only if the registry explicitly identifies the selected skill as no-charge and its capability is relevant to the architecture review; otherwise report that no suitable no-charge successor was exposed.
 
-RESUME_TASK: reasoningdelegationhigh = b5aa7a60-ec6c-440e-b750-b861f1ad3ec2
