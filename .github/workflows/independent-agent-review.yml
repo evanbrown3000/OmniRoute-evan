@@ -1,0 +1,137 @@
+name: Independent free-provider agent review
+
+on:
+  push:
+    branches: ["release/v3.8.54"]
+    paths:
+      - ".github/workflows/independent-agent-review.yml"
+      - "src/**"
+      - "packages/**"
+      - "config/**"
+      - "docs/**"
+      - "package.json"
+  schedule:
+    - cron: "17 9 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: omn iroute-independent-agent-review
+  cancel-in-progress: true
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: "release/v3.8.54"
+
+      - name: Prompt independent AI Horde agent and verify completion
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const { execSync } = require('node:child_process');
+          const api = 'https://aihorde.net/api/v2';
+          const headers = {
+            apikey: '0000000000',
+            'Client-Agent': 'OmniRoute-Evan:1.0:github.com/evanbrown3000/OmniRoute-evan'
+          };
+          const run = (cmd) => {
+            try { return execSync(cmd, { encoding: 'utf8', maxBuffer: 1024 * 1024 }).trim(); }
+            catch (e) { return String(e.stdout || '').trim(); }
+          };
+          const read = (p, n=2500) => {
+            try { return fs.readFileSync(p, 'utf8').slice(0, n); }
+            catch { return ''; }
+          };
+          const repoFiles = run("git ls-files | grep -Ei 'provider|router|agent|mcp|a2a|free|config' | head -70");
+          const providerMatches = run("git grep -n -i -E 'openai.?compatible|custom provider|baseURL|base_url|provider registry' -- src packages config docs 2>/dev/null | head -45");
+          const packageJson = read('package.json', 1800);
+          const readme = read('README.md', 2600);
+          const context = [
+            'REPOSITORY: evanbrown3000/OmniRoute-evan',
+            'BRANCH: release/v3.8.54',
+            'README EXCERPT:', readme,
+            'PACKAGE METADATA:', packageJson,
+            'PROVIDER/ROUTER FILE INDEX:', repoFiles,
+            'PROVIDER IMPLEMENTATION MATCHES:', providerMatches
+          ].join('\n\n');
+          const prompt = [
+            'You are an independent senior agent reviewing an existing model-gateway codebase.',
+            'Do not invent repository facts. Use the supplied code excerpts as evidence and explicitly distinguish observed facts from recommendations.',
+            'OmniRoute is a model gateway and routing layer, not the organism\'s agent runtime or durable work scheduler.',
+            'Task: identify the single best existing integration path for an independent free/low-cost agent provider such as AI Horde, and explain how an external agent runtime such as OpenHands Cloud could use OmniRoute without creating a second orchestration system.',
+            'Prioritize reuse of the most advanced existing provider adapter and routing strategy. Do not propose duplicate gateways, duplicate schedulers, account duplication, plaintext credentials, quota evasion, or internal test-only work.',
+            'Return: (1) the winning integration path, (2) exact repository files/config points evidenced by the excerpts, (3) free-tier/quota risks, (4) one incremental next change that can be merged without breaking existing provider routes.',
+            context
+          ].join('\n\n');
+          async function requestAgent(modelNames, label) {
+            const submit = await fetch(api + '/generate/text/async', {
+              method: 'POST',
+              headers: { ...headers, 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                prompt,
+                params: { max_length: 650, max_context_length: 4096, temperature: 0.2, top_p: 0.9 },
+                models: modelNames,
+                allow_downgrade: true
+              }),
+              signal: AbortSignal.timeout(20000)
+            });
+            if (!submit.ok) throw new Error(label + '_submit_http_' + submit.status + ':' + (await submit.text()).slice(0,300));
+            const queued = await submit.json();
+            if (!queued.id) throw new Error(label + '_missing_generation_id');
+            console.log(label + '_SUBMITTED', JSON.stringify({ id: queued.id, models: modelNames }));
+            for (let i = 0; i < 45; i++) {
+              await new Promise(resolve => setTimeout(resolve, 2000));
+              const response = await fetch(api + '/generate/text/status/' + queued.id, {
+                headers, signal: AbortSignal.timeout(15000)
+              });
+              if (!response.ok) throw new Error(label + '_status_http_' + response.status);
+              const status = await response.json();
+              if (status.done && status.generations && status.generations.length) {
+                const generation = status.generations[0];
+                console.log(label + '_COMPLETED', JSON.stringify({
+                  id: queued.id, worker_id: generation.worker_id,
+                  model: generation.model, done: status.done
+                }));
+                console.log(label + '_RESPONSE_BEGIN');
+                console.log(generation.text || '');
+                console.log(label + '_RESPONSE_END');
+                return true;
+              }
+            }
+            console.log(label + '_PENDING_NOT_COMPLETED', queued.id);
+            return false;
+          }
+          (async () => {
+            const response = await fetch(api + '/status/models?type=text', {
+              headers, signal: AbortSignal.timeout(15000)
+            });
+            if (!response.ok) throw new Error('model_catalogue_http_' + response.status);
+            const catalogue = await response.json();
+            const active = catalogue
+              .filter(m => Number(m.count || 0) > 0)
+              .sort((a,b) => Number(b.count || 0) - Number(a.count || 0));
+            if (!active.length) throw new Error('no_active_text_models');
+            const preferred = active.filter(m => /qwen|llama|gemma/i.test(m.name));
+            const selected = (preferred.length ? preferred : active).slice(0, 5).map(m => m.name);
+            console.log('AI_HORDE_ACTIVE_MODEL_COUNT', active.length);
+            const completed = await requestAgent(selected, 'PRIMARY_AGENT');
+            if (!completed) process.exitCode = 2;
+            if (Math.random() < 0.36) {
+              const alternate = active.find(m => !selected.includes(m.name));
+              if (alternate) {
+                const second = await requestAgent([alternate.name], 'ADDITIONAL_AGENT_36_PERCENT');
+                if (!second) process.exitCode = 2;
+              }
+            }
+          })().catch(error => {
+            console.error('AI_HORDE_AGENT_ERROR', error.message);
+            process.exitCode = 1;
+          });
+          NODE
