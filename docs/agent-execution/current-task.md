@@ -156,3 +156,21 @@ This is a fresh native-agent turn. Prior task receipts and acknowledgements do n
 8. Prioritize qualifying and connecting existing legitimate free-tier resources before proposing additional accounts. Do not create accounts, reuse passwords, collect/disclose credentials, bypass identity verification, quotas, rate limits, billing controls, or provider fair-use limits. Do not provision paid resources, perform outreach, publish listings, transfer funds, access private memory-corpus contents, modify application code, or run internal tests.
 
 Required evidence: GitHub workflow run ID/status; browser HAR artifact path and digest; observed backend requests; provider/platform and native tool name; native task ID and terminal state; independent readback; second-agent result if selected; exact failures; source-backed long-term promotion recommendation.
+
+
+---
+
+## New direct-owner execution turn — 2026-11-12 — gpt6-20261112-omniroute-federation-expansion-07
+
+This is a fresh agent turn for the current owner request. Earlier sections are historical context; do not duplicate their prior results.
+
+1. Perform substantive independent research and code review now; do not return a plan, checklist, or restatement of this assignment.
+2. Inspect public source in https://github.com/evanbrown3000/OmniRoute-evan/tree/release/v3.8.54 and relevant public upstream history. Identify the best proven implementation to promote for real provider-native agent turns and durable remote execution. Give exact source paths and explain what is actually implemented versus merely configured.
+3. Preserve the ownership composition: Pipeline is the sole durable recurrence/lease owner; Work Episode owns per-turn assignments and receipts; Networks owns provider/node admission and placement; Accounts owns credential custody; ComputerUseX owns browser/session/HAR capture; B4PT0R owns provider-native website-session transport; LibreChat is used where its native runtime is qualified; OmniRoute owns inference and A2A/MCP routing. Do not introduce another scheduler, graph, transcript store, or credential vault.
+4. Compare current public GitHub projects and official documentation for OpenHands (Agent Server, software-agent-sdk, Automation), LangGraph, Agno, Letta, Kilo, Cloudflare Browser Run, Browserbase, Browserless, Daytona, E2B, and Modal. Separate native agent execution, durable workflow orchestration, browser-session service, and compute. Report only free capacity explicitly supported by official current sources; distinguish recurring credits from one-time trial credits and do not treat free model inference as free agent execution.
+5. The native turn is the execution itself: use the existing Agent Router MCP route to invoke one real platform agent on a distinct platform. If an asynchronous task ID is returned, poll that exact ID to terminal state and read back its result. The workflow's 36% secondary-agent cadence must remain active; if selected, actually execute the secondary turn and record independent evidence. A discovery result, queued prompt, HTTP 2xx, or model-only completion is not enough.
+6. Be candid about the earlier workflow's observed 502s and TaskPlanner response. Do not repeat the same generic plan. Prefer a substantive architecture review from SoftwareEngineeringExpert, ResearchAgent, ReasoningDelegationHigh, or another genuinely relevant agent. Do not duplicate any task that is still pending.
+7. Browser research should capture only sanitized, public evidence. Do not persist cookies, authorization headers, tokens, personal data, or private payloads. DeepWiki 429s must be recorded as unavailable rather than bypassed.
+8. Do not create new accounts, collect or disclose credentials, reuse passwords, evade provider rate limits or quotas, spend money, contact people, publish listings, transfer funds, access private memory-corpus contents, modify application code, or run internal tests. Qualify existing legitimate routes before proposing additional provider enrollment.
+
+Required response: actual platform and native tool name, task ID if returned, provider-native terminal state, independent readback, concise substantive findings, source paths, official source URLs, free-tier limits with recurring/one-time distinction, observed browser/HAR endpoints and sanitized artifact digest, and exact failures.
