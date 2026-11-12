@@ -1,58 +1,59 @@
-# Active agent-execution assignment
+# OmniRoute federated native-agent execution — turn 11
 
-**Request ID:** `gpt6-20261112-omniroute-federation-07`
-**Date:** 2026-11-12
-**Mode:** read-only architecture review plus one real remote native-agent execution.
-
-This is the only active assignment in this file. Historical task prompts and evidence are preserved in `docs/agent-execution/history/2026-11-12-pre-federation-07.md`; do not replay them.
+Request ID: gpt6-20261112-omniroute-evan-turn-11
+TARGET_AGENT: taskplanner
+SECONDARY_AGENT: firstprinciplesanalyst
+EXPECTED_36_PERCENT_BUCKET: 9
 
 ## Objective
 
-Strengthen the existing heterogeneous Cognilode/OmniRoute federation by promoting the strongest proven historical implementation and connecting it to the existing owners. Do not start over or create another scheduler, account vault, graph, registry, or transcript store.
+Continue the existing OmniRoute foundation. Do not rebuild the gateway, create a competing scheduler, or assume the newest branch is strongest. Compare the strongest historical implementations and recommend the durable federation design.
 
-Preserve these boundaries:
-- Pipeline: sole durable work, recurrence, lease, retry, and stage-transition authority.
-- Work Episode: durable logical assignment, child-agent handoffs, idempotency, and end-to-end evidence.
-- Networks: provider/resource capacity, independent quota and failure domains, placement, and admission.
-- Accounts: provider identities, encrypted credential custody, revisioned sessions, and recovery.
-- ComputerUseX: browser interaction, provider login, HAR/backend evidence, and session lifecycle.
-- B4PT0R: provider-native website-session transport where the existing native API/LibreChat route does not already provide it.
-- LibreChat: its qualified native agent runtime.
-- OmniRoute: model/inference gateway, provider adapters, and A2A/MCP transport.
-- Secretary: selection and routing among qualified capabilities, not a second scheduler.
+## Required live execution
 
-## Required execution
+1. Use the Agent Router MCP endpoint through the existing Playwright browser workflow. Capture the real browser HAR, MCP endpoint, HTTP methods/statuses, tool names, and input schemas. Keep HAR sanitized: no cookies, authorization headers, tokens, query values, or raw request/response bodies.
+2. Invoke the native `taskplanner` agent. If it returns a task ID, poll that exact ID with `wait_for_task` until provider-native terminal completion and read back the result.
+3. The deterministic 36% second-agent bucket for this request ID is 9, so invoke `firstprinciplesanalyst` as a genuinely independent second task after primary completion. It must have its own native task ID and terminal readback. It is not a fallback substitute for the primary. If the primary is pending, do not start the secondary or a fallback; retain a resume directive for the same task ID.
+4. Trigger the free A2A preflight on the separate Lordevo Shop endpoint using only its free preflight capability for the public repository URL. Do not invoke paid skills, initiate x402, request a wallet, create an account, or submit payment. Record the returned A2A state and context ID. A capability listing or HTTP 2xx alone is not completion.
+5. Return provider names, native task IDs, terminal states, final readbacks, the independent-agent selection bucket, and sanitized browser evidence.
 
-1. Use this repository's GitHub-hosted Playwright workflow and its Agent Router MCP endpoint. Do not use the owner's personal computer.
-2. Capture the browser HAR for Agent Router pricing, DeepWiki, and MCP discovery/invocation. Retain sanitized evidence only: strip all headers, cookies, query values, request/response bodies, and token-like fields. Preserve method, host/path, HTTP status, timestamps, timing, JSON-RPC method/tool name, and safe provider task IDs in a separate index/receipt.
-3. Discover the live MCP tool schemas. Actually invoke at least one substantive native agent on the external Agent Router platform. If it returns a task ID, poll that exact ID until provider-native terminal completion and independently read back the result.
-4. Use a stable request-ID-based 36% secondary-agent selection. If selected, actually invoke the second agent and independently record its result. Do not spawn duplicate fallback work while any native task is unresolved.
-5. If a task remains pending at the workflow deadline, emit an exact `RESUME_TASK: tool_name = native_task_id` directive and preserve it in the run receipt. A later run must resume the same native task, not create a replacement.
-6. If the native agent's own tools expose a no-charge external A2A agent on another provider platform, actually invoke a substantive successor and read it back. Otherwise state precisely which capability is absent. Do not treat Slack posts, queued prompts, inference-only answers, HTTP 2xx, or tool discovery as native completion.
+## Architecture review
 
-## Architecture and historical promotion
+Compare:
+- `release/v3.8.54`
+- `agent-router-a2a-20261112-03`
+- `agent-router-a2a-20261112-04`
+- `agent-router-a2a-20261112-05`
 
-Compare the current `release/v3.8.54` workflow with historical branches `agent-router-a2a-20261112-01` and `-02`. Focus on durable `RESUME_TASK` continuation, exact same-ID polling, terminal-state verification, deterministic 36% peer selection, no-duplicate fallback, HAR sanitization, and durable Work Episode receipts. Promote the strongest proven composition while preserving the useful current-branch behavior.
+Specifically assess:
+- Branch 04's independently completed primary/secondary native turns and browser/HAR evidence.
+- Branch 05's resumable task IDs, same-ID polling, MCP trace, response hashes, and sanitized HAR index.
+- The failure-path defect where a selected secondary can be mistaken for the primary fallback after a primary HTTP 502.
+- The minimal composition that preserves branch 05's resumability while requiring primary completion before a true second review.
+- Durable WorkEpisode receipts and the single Pipeline owner for recurrence, leases, retries, and effect readback.
+- Networks as provider/node admission and placement; Accounts as credential custody; ComputerUseX as browser/HAR ownership; B4PT0R as provider-hosted website-session transport; OmniRoute as inference gateway and MCP/A2A routing.
 
-Inspect the existing A2A task route, CloudAgent adapters, MCP registry, provider web-session contract, CUX historical `native_product.py`/session-custody implementation, B4PT0R, Pipeline, Networks, Accounts, and Work Episode. Identify exact source paths and the smallest owner-to-owner integration seam that yields a verifiable provider-native turn receipt bound to the correct account revision, remote node/egress, browser session/HAR, native task identity, terminal state, and independent readback.
+## External research
 
-Research current public GitHub projects and official provider documentation for Google A2A, OpenHands, Kilo, LangGraph, Agno, Letta, Cloudflare Agents/Browser Run, Browserbase/Browserless, Daytona, E2B, Modal, Blaxel, and stronger alternatives. Distinguish native agent execution, model inference, browser capability, and remote compute. Separate recurring free capacity from one-time credits and metered usage; only claim allowances supported by current primary sources.
+Use public GitHub repositories and official current documentation. Compare OpenHands, Agno, LangGraph, Letta/Graphiti, Agent Router, Cloudflare Browser Run/Workers, Browserbase, Browserless, Daytona, E2B, Modal, n8n, and Dify. Distinguish:
+- inference API versus provider-native agent execution;
+- remote compute versus browser session hosting;
+- recurring free capacity versus one-time credits;
+- no-signup public agent access versus account-required platforms;
+- provider task identity, terminal state, and readback evidence.
 
-## Constraints
+Prefer existing, proven free-tier routes. Do not assume that model inference proves agent execution or that an advertised free tier guarantees unlimited capacity.
 
-- Public repository content and public official documentation only.
-- No new account creation, duplicate identities, password reuse, credential collection/disclosure, quota/rate-limit/identity/billing circumvention, or paid provisioning.
-- No access to private agent-memory contents; no secrets or private metadata in prompts, logs, HAR, artifacts, or Git.
-- No outreach, listings, revenue-transfer actions, application-code changes, or internal tests.
-- Do not restart existing services or use the personal laptop.
-- Report exact failures and last observable state; never claim completion without provider-native terminal evidence and independent readback.
+## Security and execution constraints
 
-## Required deliverables
+- No account creation is necessary for this turn; use the existing no-signup public routes.
+- Do not request, expose, store, or commit credentials, passwords, API keys, wallet keys, or private memory.
+- Do not bypass provider quotas, rate limits, identity checks, billing controls, or payment requirements.
+- Do not use the owner's personal computer.
+- Do not modify OmniRoute gateway/application source code or run internal tests.
+- Do not access or disclose private memory-corpus contents.
+- Keep all external-agent prompts limited to public repository facts and this architecture summary.
 
-- GitHub workflow run ID/status and job result.
-- Sanitized HAR artifact name/path and SHA-256 digest.
-- HAR index showing observed backend methods, sanitized URLs, statuses, MCP methods/tool names, and timing.
-- Native provider/platform, tool name, task ID, terminal status, timestamps, response digest, and independent readback.
-- Secondary-agent evidence if selected; otherwise deterministic selection result.
-- Any pending-task `RESUME_TASK` directive.
-- Source-backed comparison and one long-term promotion recommendation with exact paths, owner boundaries, integration seam, and unresolved blockers.
+## Required conclusion
+
+Recommend one long-term architecture and the strongest historical implementation to promote. Separate verified live execution from failed routes, inference-only calls, discovery, acknowledgements, and pending work. Identify the remaining owner integration required for durable WorkEpisode receipts and Pipeline-owned recurrence.
