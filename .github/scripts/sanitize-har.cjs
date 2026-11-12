@@ -146,4 +146,21 @@ function sanitizeHarFile(filePath) {
   };
 }
 
-module.exports = { sanitizeHarFile };
+async function finalizeHarCapture({ context, browser, filePath }) {
+  let closeError = null;
+  if (context && typeof context.close === "function") {
+    try { await context.close(); } catch (error) { closeError = error; }
+  }
+  if (browser && typeof browser.close === "function") {
+    try { await browser.close(); } catch (error) { closeError = closeError || error; }
+  }
+  if (closeError) {
+    throw new Error("browser_capture_finalize_failed: " + String(closeError).slice(0, 300));
+  }
+  if (typeof filePath !== "string" || !fs.existsSync(filePath)) {
+    throw new Error("har_missing_after_context_close: " + String(filePath || ""));
+  }
+  return sanitizeHarFile(filePath);
+}
+
+module.exports = { sanitizeHarFile, finalizeHarCapture };
