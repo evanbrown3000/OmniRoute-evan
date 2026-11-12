@@ -69,8 +69,8 @@ jobs:
       - name: Install Pi agent runtime and Kilo provider
         run: |
           set -euo pipefail
-          npm install --global @mariozechner/pi-coding-agent
-          pi install git:mrexodia/kilo-pi-provider
+          npm install --global --ignore-scripts @earendil-works/pi-coding-agent@0.99.1
+          pi install git:github.com/Kilo-Org/kilo-pi-provider@v2026.09.3
           pi --help > "$RUNNER_TEMP/pi-kilo/pi-help.txt"
           pi --version > "$RUNNER_TEMP/pi-kilo/pi-version.txt"
 
@@ -90,7 +90,7 @@ jobs:
           (root / "prompt.txt").write_text(prompt, encoding="utf-8")
           PY
           set +e
-          pi --print --model "kilo/minimax/minimax-m2.1:free" --tools "read,grep,find,ls" "$(cat "$RUNNER_TEMP/pi-kilo/prompt.txt")" > "$RUNNER_TEMP/pi-kilo/result.md" 2> "$RUNNER_TEMP/pi-kilo/pi.stderr"
+          pi --print --model "kilo/kilo-auto/free" --tools "read,grep,find,ls" "$(cat "$RUNNER_TEMP/pi-kilo/prompt.txt")" > "$RUNNER_TEMP/pi-kilo/result.md" 2> "$RUNNER_TEMP/pi-kilo/pi.stderr"
           code=$?
           set -e
           printf '%s\n' "$code" > "$RUNNER_TEMP/pi-kilo/exit-code.txt"
@@ -128,8 +128,8 @@ jobs:
               "workflow_run_url": os.environ["RUN_URL"],
               "agent_runtime": "pi-coding-agent",
               "provider": "kilo",
-              "model": "minimax/minimax-m2.1:free",
-              "provider_quota": "Kilo shared free-model allocation",
+              "model": "kilo-auto/free",
+              "provider_quota": "Kilo Auto Free shared allocation; published limit 200 requests/hour/IP; upstream availability applies",
               "pi_session_id": session_id,
               "pi_session_sha256": session_sha256,
               "pi_session_file_count": len(session_files),
