@@ -54,6 +54,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--directory', default='/native/native-visibility')
     parser.add_argument('--limit', type=int, default=3)
+    parser.add_argument('--conversation-id', help='Only reconcile this exact native conversation')
     args = parser.parse_args()
     if not 1 <= args.limit <= 3:
         parser.error('--limit must be between 1 and 3')
@@ -67,6 +68,8 @@ def main():
     for path in sorted(directory.glob('*.json'), key=lambda p: p.stat().st_mtime, reverse=True)[:80]:
         before = path.read_bytes()
         snapshot = json.loads(before)
+        if args.conversation_id and snapshot.get('conversation_id') != args.conversation_id:
+            continue
         if snapshot.get('status') != 'turn ended' or time.time() - path.stat().st_mtime < 30:
             continue
         if any(m.get('kind') == 'final' and m.get('end_turn') and m.get('text', '').strip()
