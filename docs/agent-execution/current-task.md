@@ -58,3 +58,22 @@ Run the existing `.github/workflows/agent-router-a2a.yml` workflow for this turn
 
 ## 2026-11-12 — Independent agent readback review
 Review this branch's provider-native agent execution path as a new independent turn. Inspect the actual A2A workflow and its current result-readback contract; distinguish native agent execution from inference-only model calls. Compare the strongest relevant public GitHub implementations and current free-tier options (OpenHands, LangGraph, Agno, Letta, Kilo Gateway, Cloudflare Browser Run, Browserbase, Browserless, Daytona, Modal, and Blaxel). Recommend one long-term change that preserves a single durable workflow owner, stable task IDs, terminal-state verification, sanitized HAR capture, and owner-readable final response. Do not access the private agent-memory corpus, create accounts, bypass quotas, store credentials, send outreach, or modify application code. Return source links, the actual provider/agent names, native task ID, terminal state, and concise findings. Do not launch duplicate work while another native task is pending.
+
+---
+
+## Authoritative current-turn assignment — 2026-11-12
+
+Request ID: `gpt6-20261112-omniroute-federation-expansion-02`
+
+The owner has requested substantive expansion of the existing Cognilode/OmniRoute federated agent and remote-execution system. Treat this section as the current-turn objective; prior sections are historical architecture and execution context, not separate tasks to duplicate.
+
+1. Preserve and strengthen the existing OmniRoute, Pipeline, Networks, WorkEpisode, B4PT0R, LibreChat, Accounts, ComputerUseX, Memory, and Comms ownership boundaries. Do not start over or create a competing global scheduler, graph, transcript store, or account vault.
+2. Begin provider-first with the existing Playwright workflow: capture a sanitized HAR for Agent Router pricing, DeepWiki, and the Agent Router MCP endpoint; record observed methods, URLs, status codes, advertised tool names, and input schemas. Do not retain cookies, tokens, authorization headers, or private payloads.
+3. Actually invoke at least one native external agent on a distinct platform. If it returns a task ID, poll that exact task until terminal provider-native completion and read back the result. A queue acknowledgement, discovery response, inference-only answer, or HTTP 2xx is not completion. Do not duplicate unresolved work.
+4. Preserve the existing 36% secondary-agent cadence. If the secondary route is selected, actually execute it and independently record its provider-native result.
+5. Review current public GitHub implementations and official free-tier documentation for OpenHands, Kilo, LangGraph, Agno, Letta, Graphiti, Cloudflare Browser Run, Browserbase, Browserless, Daytona, E2B, Modal, Blaxel, Vercel Sandboxes, and other materially stronger alternatives. Compare durable work, native agent turns, browser sessions, quota, cost, account prerequisites, and terminal evidence. Prioritize public source repositories and current primary documentation.
+6. Inspect current and strongest historical implementations, not merely the newest branch. Recommend the best proven architecture to promote, and identify where it should connect to existing owners. Distinguish inference providers, native agent platforms, browser providers, and remote compute.
+7. No account creation, password reuse, credential collection, credential disclosure, quota/billing bypass, paid resource provisioning, outreach, listings, or revenue-transfer actions in this review. Do not modify application code or run internal tests. Do not access or disclose private agent-memory corpus contents. Keep credentials and private metadata out of public repositories and external-agent prompts.
+8. Return exact execution evidence: provider/platform, native tool name, task ID if any, terminal status, concise result, HAR artifact location, and the source URLs supporting the architecture and free-tier comparison. If an execution route is unavailable, report its exact failure and continue only through a distinct supported route.
+
+The long-term objective is a self-replenishing heterogeneous federation with one durable work authority, provider-specific native execution adapters, independently qualified remote nodes, explicit account/egress/quota boundaries, and source-backed completion/readback. Do not count a new account, registered URL, model API, queued task, or stopped browser session as an operational agent node without a real qualification receipt.
