@@ -5,6 +5,12 @@ on:
     branches: [release/v3.8.54]
     paths:
       - "agent-requests/*.json"
+  workflow_dispatch:
+    inputs:
+      request_id:
+        description: "Existing agent-requests/<request_id>.json to execute"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -25,25 +31,43 @@ jobs:
       - name: Resolve one peer request
         id: request
         env:
-          EVENT_SHA: ${{ github.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_PATH: ${{ github.event_path }}
+          DISPATCH_REQUEST_ID: ${{ github.event.inputs.request_id || '' }}
         run: |
           python - <<'PY'
-          import json, os, pathlib, subprocess
-          sha = os.environ["EVENT_SHA"]
-          paths = subprocess.check_output(
-              ["git", "diff-tree", "--no-commit-id", "--name-only", "-r", sha],
-              text=True,
-          ).splitlines()
-          candidates = [p for p in paths if p.startswith("agent-requests/") and p.endswith(".json")]
+          import json, os, pathlib, re
+          if os.environ["EVENT_NAME"] == "workflow_dispatch":
+              request_id = os.environ["DISPATCH_REQUEST_ID"].strip()
+              if not re.fullmatch(r"[A-Za-z0-9._-]{1,120}", request_id):
+                  raise SystemExit("invalid dispatch request_id")
+              candidates = [f"agent-requests/{request_id}.json"]
+          else:
+              event = json.loads(pathlib.Path(os.environ["EVENT_PATH"]).read_text(encoding="utf-8"))
+              changed = set()
+              for commit in event.get("commits", []):
+                  changed.update(commit.get("added", []))
+                  changed.update(commit.get("modified", []))
+              head = event.get("head_commit") or {}
+              changed.update(head.get("added", []))
+              changed.update(head.get("modified", []))
+              candidates = sorted(
+                  path for path in changed
+                  if path.startswith("agent-requests/") and path.endswith(".json")
+              )
           if len(candidates) != 1:
               raise SystemExit(f"expected exactly one request; found {len(candidates)}")
           path = pathlib.Path(candidates[0])
+          if not path.is_file():
+              raise SystemExit(f"request file does not exist: {path.as_posix()}")
           data = json.loads(path.read_text(encoding="utf-8"))
           required = {"request_id", "parent_workflow_run_id", "parent_native_task_id", "prompt"}
           if set(data) != required:
               raise SystemExit("request schema mismatch")
           if data["request_id"] != path.stem or not isinstance(data["prompt"], str) or not data["prompt"].strip():
               raise SystemExit("request identity or prompt invalid")
+          if not isinstance(data["parent_workflow_run_id"], int) or not isinstance(data["parent_native_task_id"], str) or not data["parent_native_task_id"].strip():
+              raise SystemExit("parent execution identity invalid")
           if len(data["prompt"]) > 12000:
               raise SystemExit("prompt exceeds the public-run bound")
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
