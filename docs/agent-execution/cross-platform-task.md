@@ -1,14 +1,15 @@
 # Native agent federation review
 
-REQUEST_ID: gpt6-20261112-omniroute-federation-05
-TARGET_AGENT: The Agent Forge
-SECONDARY_AGENT: taskplanner
+REQUEST_ID: gpt6-20261112-omniroute-federation-turn-02
+TARGET_AGENT: softwareengineeringexpert
+SECONDARY_AGENT: researchagent
 CROSS_PLATFORM_ONLY: true
 PUBLIC_SOURCES_ONLY: true
 
 ## Task
 
-You are an independent external A2A agent on a platform separate from ChatGPT. Perform a substantive source-backed architecture critique, not an acknowledgement, queue receipt, or generic execution plan. Focus on the highest-leverage way to make the existing Cognilode/OmniRoute federation complete more real cross-platform native agent turns.
+This is a new, independent provider-native turn. Do not reuse or duplicate any prior task. A previous ReasoningDelegationHigh attempt returned RUNNING without a recoverable task ID; do not infer it completed and do not attempt to resume it. Use the advertised SoftwareEngineeringExpert tool for this turn. If the deterministic 36% second-hop is selected, invoke ResearchAgent as a separate child and verify its independent result.
+You are an independent software engineering expert agent hosted on Agent Router, separate from ChatGPT. Perform a substantive source-backed architecture critique, not an acknowledgement, queue receipt, or generic execution plan. Focus on the highest-leverage way to make the existing Cognilode/OmniRoute federation complete more real cross-platform native agent turns.
 
 Public source references:
 - https://github.com/evanbrown3000/OmniRoute-evan/tree/release/v3.8.54
@@ -63,6 +64,8 @@ Return:
 - what is verified, inferred, or unavailable;
 - one concrete next implementation step that increases actual completed cross-platform turns.
 
-If your native tools support a peer handoff to a different provider platform, perform one bounded no-cost handoff and return that provider's native task/conversation ID, terminal state, and independent readback. Do not claim a handoff if you only queued it.
+If a no-cost peer handoff to a genuinely different provider platform is available, perform one bounded handoff and return the peer's native task/conversation ID, terminal state, and independent readback. Do not claim a handoff if you only queued it.
 
 Constraints: public sources only; no account creation, credential access/disclosure, password reuse, quota/rate-limit/billing circumvention, paid calls/provisioning, private-memory access, outreach, listings, revenue transfers, application-code changes, or internal tests. Never place secrets, private payloads, cookies, or authorization headers in a public artifact. A queued acknowledgement, discovery response, HTTP 2xx alone, or inference-only answer is not proof of a completed native agent turn.
+
+For this turn, also identify one currently open, publicly posted paid engineering bounty or contract that fits the repository's capabilities. Provide the live posting URL, reward and payout terms only when verified from the posting. Do not apply, message, email, submit a proposal, or create an offering.
