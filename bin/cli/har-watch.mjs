@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { writePrivateFileAtomic } from "./private-file.mjs";
+import { HAR_IMPORT_REVISION } from "./provider-har.mjs";
 
 /** Watch captured credentials, not provider generation: each worker owns its timer. */
 export async function scanHarDirectory(directory, state, importFile, now = Date.now()) {
@@ -12,13 +13,23 @@ export async function scanHarDirectory(directory, state, importFile, now = Date.
     if (!statSync(path).isFile()) continue;
     const hash = createHash("sha256").update(readFileSync(path)).digest("hex");
     const previous = state[file];
-    if (previous?.hash === hash && (previous.ok || previous.retryAfter > now)) continue;
+    if (
+      previous?.revision === HAR_IMPORT_REVISION &&
+      previous.hash === hash &&
+      (previous.ok || previous.retryAfter > now)
+    )
+      continue;
     try {
       const code = await importFile(path);
-      state[file] = { hash, ok: code === 0, retryAfter: code === 0 ? 0 : now + 300_000 };
+      state[file] = {
+        hash,
+        revision: HAR_IMPORT_REVISION,
+        ok: code === 0,
+        retryAfter: code === 0 ? 0 : now + 300_000,
+      };
       results.push({ file, code });
     } catch {
-      state[file] = { hash, ok: false, retryAfter: now + 300_000 };
+      state[file] = { hash, revision: HAR_IMPORT_REVISION, ok: false, retryAfter: now + 300_000 };
       results.push({ file, code: 1 });
     }
   }

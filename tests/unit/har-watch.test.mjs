@@ -29,3 +29,24 @@ test("new captures import once, changed captures refresh, failures do not gate o
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("an importer upgrade retries previously scanned captures exactly once", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "omniroute-har-watch-upgrade-"));
+  try {
+    writeFileSync(join(dir, "callback.har"), "unchanged login callback");
+    const state = {};
+    let calls = 0;
+    const importer = async () => {
+      calls++;
+      return 0;
+    };
+    await scanHarDirectory(dir, state, importer, 100);
+    delete state["callback.har"].revision;
+    await scanHarDirectory(dir, state, importer, 200);
+    await scanHarDirectory(dir, state, importer, 300);
+    assert.equal(calls, 2);
+    assert.equal(state["callback.har"].revision, 2);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
