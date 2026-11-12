@@ -1,0 +1,224 @@
+name: One-shot cross-platform agent review
+
+on:
+  push:
+    branches:
+      - agent-router-a2a-20261112-01
+    paths:
+      - ".github/workflows/agent-router-a2a.yml"
+
+permissions: {}
+
+jobs:
+  agent-review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install isolated browser runtime
+        run: |
+          mkdir -p "$RUNNER_TEMP/agent-router"
+          cd "$RUNNER_TEMP/agent-router"
+          npm init -y >/dev/null
+          npm install --no-save playwright@1.56.1
+          npx playwright install --with-deps chromium
+
+      - name: Capture browser HAR and invoke native A2A agents
+        working-directory: ${{ runner.temp }}/agent-router
+        run: |
+          node --input-type=module <<'NODE'
+          import { chromium } from "playwright";
+          import fs from "node:fs";
+
+          const harPath = `${process.env.RUNNER_TEMP}/agent-router.har`;
+          const browser = await chromium.launch({ headless: true });
+          const context = await browser.newContext({
+            recordHar: { path: harPath, mode: "full", content: "embed" }
+          });
+          const page = await context.newPage();
+          let pricingStatus = null;
+          let pricingUrl = null;
+          let pricingTitle = "";
+          let pricingText = "";
+          let browserMcpProbe = null;
+
+          try {
+            const pricing = await page.goto("https://www.agent-router.org/pricing", {
+              waitUntil: "domcontentloaded",
+              timeout: 30000
+            });
+            pricingStatus = pricing?.status() ?? null;
+            pricingUrl = page.url();
+            pricingTitle = await page.title();
+            pricingText = (await page.locator("body").innerText().catch(() => "")).slice(0, 2500);
+
+            await page.goto("https://agent-router.org/", {
+              waitUntil: "domcontentloaded",
+              timeout: 30000
+            });
+            browserMcpProbe = await page.evaluate(async () => {
+              const response = await fetch("/mcp-http/mcp", {
+                method: "POST",
+                headers: {
+                  "content-type": "application/json",
+                  "accept": "application/json, text/event-stream"
+                },
+                body: JSON.stringify({
+                  jsonrpc: "2.0",
+                  id: "browser-har-discovery",
+                  method: "tools/list",
+                  params: {}
+                })
+              });
+              return {
+                status: response.status,
+                body: (await response.text()).slice(0, 2000)
+              };
+            });
+          } finally {
+            await context.close();
+            await browser.close();
+          }
+
+          const har = JSON.parse(fs.readFileSync(harPath, "utf8"));
+          const requests = har.log.entries
+            .map(entry => ({
+              method: entry.request.method,
+              url: entry.request.url,
+              status: entry.response.status
+            }))
+            .filter(entry => /agent-router|mcp-http|a2a/i.test(entry.url))
+            .slice(0, 40);
+          fs.rmSync(harPath, { force: true });
+
+          console.log("BROWSER_HAR_EVIDENCE=" + JSON.stringify({
+            pricingStatus,
+            pricingUrl,
+            pricingTitle,
+            pricingSaysNoSignup: /no sign-up/i.test(pricingText),
+            pricingExcerpt: pricingText,
+            browserMcpProbe,
+            backendRequests: requests
+          }));
+
+          const endpoint = "https://agent-router.org/mcp-http/mcp";
+          const rpc = async (method, params, id) => {
+            const response = await fetch(endpoint, {
+              method: "POST",
+              headers: {
+                "content-type": "application/json",
+                "accept": "application/json, text/event-stream"
+              },
+              body: JSON.stringify({ jsonrpc: "2.0", id, method, params }),
+              signal: AbortSignal.timeout(55000)
+            });
+            const raw = await response.text();
+            let parsed;
+            try {
+              parsed = JSON.parse(raw);
+            } catch {
+              const dataLine = raw.split("\n").find(line => line.startsWith("data:"));
+              if (dataLine) {
+                try { parsed = JSON.parse(dataLine.slice(5).trim()); } catch {}
+              }
+            }
+            if (!response.ok) {
+              throw new Error(`MCP HTTP ${response.status}: ${raw.slice(0, 1200)}`);
+            }
+            if (parsed?.error) {
+              throw new Error(`MCP ${method} error: ${JSON.stringify(parsed.error).slice(0, 1200)}`);
+            }
+            return { status: response.status, parsed, raw };
+          };
+
+          const toolsResponse = await rpc("tools/list", {}, 1);
+          const toolNames = (toolsResponse.parsed?.result?.tools ?? []).map(tool => tool.name);
+          if (!toolNames.includes("a2a_call_agent")) {
+            throw new Error("Agent Router MCP did not advertise a2a_call_agent");
+          }
+
+          let discovery = null;
+          try {
+            discovery = await rpc("tools/call", {
+              name: "discover_agents",
+              arguments: { query: "software architecture and agent execution", limit: 10 }
+            }, 2);
+          } catch (error) {
+            console.log("DISCOVERY_FALLBACK=" + String(error));
+          }
+
+          const prompt = [
+            "You are an independent software-systems architect. Review this verified OmniRoute implementation inventory and give a source-backed architecture recommendation.",
+            "Repository: https://github.com/evanbrown3000/OmniRoute-evan/tree/release/v3.8.54",
+            "Existing implementation: provider-node API includes GET/POST /api/provider-nodes and POST /api/provider-nodes/validate; isolated Chromium/VNC/CDP provider-login sessions use management-authenticated /api/vnc-session routes, localhost-bound browser/CDP ports, up to four concurrent sessions, non-persistent profiles by default, ten-minute idle timeout and thirty-minute maximum lifetime; AgentBridge exposes IDE-agent routing and mappings; a Devin ACP bridge supplies a Claude-format tool-capable provider; routing already includes a large provider catalog, free-tier evidence, quota-aware selection, health and failover.",
+            "Goal: expand durable remote execution providers and browser sessions without starting from scratch. Distinguish (1) model inference endpoints, (2) native agent turns with provider-native completion evidence, and (3) browser sessions with HAR/backend endpoint evidence.",
+            "Compare current public options including Agent Router MCP/A2A, OpenWOP, OpenHands Cloud, Cloudflare Browser Run, Browserbase, Browserless and any stronger free-tier alternatives you can verify.",
+            "Recommend one long-term design and the strongest existing implementation to promote; identify the minimal integration points, provider failover boundaries, durable identity/secret boundaries, and how to prove a turn actually completed rather than merely being queued.",
+            "Do not modify code, create accounts, run tests, assume a free tier without current evidence, or invent successful provider executions. Include direct source URLs and concise reasoning."
+          ].join("\n\n");
+
+          const candidates = [
+            "https://social.duoleads.com/a2a",
+            "https://localmark.ai/a2a",
+            "https://duami.ai/a2a"
+          ];
+          const failures = [];
+          let completed = null;
+
+          for (let index = 0; index < candidates.length; index++) {
+            const agentUrl = candidates[index];
+            try {
+              const response = await rpc("tools/call", {
+                name: "a2a_call_agent",
+                arguments: {
+                  agent_url: agentUrl,
+                  message: prompt,
+                  timeout_seconds: 35
+                }
+              }, 10 + index);
+              const result = response.parsed?.result ?? response.parsed;
+              const textContent = (result?.content ?? [])
+                .filter(item => item.type === "text")
+                .map(item => item.text)
+                .join("\n");
+              const isError = Boolean(result?.isError || response.parsed?.isError || response.parsed?.error);
+              if (!isError && textContent.trim().length > 80) {
+                completed = { agentUrl, httpStatus: response.status, response: textContent };
+                break;
+              }
+              failures.push({ agentUrl, reason: textContent.slice(0, 800) || "Empty/error result" });
+            } catch (error) {
+              failures.push({ agentUrl, reason: String(error).slice(0, 1000) });
+            }
+          }
+
+          if (!completed) {
+            throw new Error("No native A2A agent turn completed: " + JSON.stringify(failures));
+          }
+
+          const output = {
+            status: "completed",
+            provider: "Agent Router MCP / A2A",
+            agentUrl: completed.agentUrl,
+            httpStatus: completed.httpStatus,
+            responseLength: completed.response.length,
+            response: completed.response.slice(0, 12000),
+            failedAlternates: failures,
+            advertisedTools: toolNames,
+            discoveredAgents: discovery?.parsed?.result?.content ?? null
+          };
+          console.log("NATIVE_AGENT_RESULT=" + JSON.stringify(output));
+          fs.appendFileSync(
+            process.env.GITHUB_STEP_SUMMARY,
+            "## Native cross-platform agent execution\n\n" +
+            "- Provider: Agent Router MCP / A2A\n" +
+            "- Agent: " + completed.agentUrl + "\n" +
+            "- Native HTTP status: " + completed.httpStatus + "\n" +
+            "- Response characters: " + completed.response.length + "\n\n" +
+            completed.response.slice(0, 12000) + "\n"
+          );
+          NODE
