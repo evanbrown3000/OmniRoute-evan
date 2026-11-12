@@ -1,0 +1,16 @@
+[Unit]
+Description=Cognilode bounded ChatGPT shell connector
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/docker exec --env SHELL_APP_ORIGIN=https://chatgpt-shell.cognilode.com --env SHELL_APP_PORT=5014 --env SHELL_APP_STATE=/state/shell-app cognilode-librechat-2af3e3af-codex-app-server-1 python -u /workspace/stable-shell-service.py shell
+ExecStop=/usr/bin/docker exec cognilode-librechat-2af3e3af-codex-app-server-1 python /workspace/stable-shell-service.py shell --stop
+Restart=always
+RestartSec=20
+TimeoutStopSec=30
+
+[Install]
+WantedBy=default.target
+
+

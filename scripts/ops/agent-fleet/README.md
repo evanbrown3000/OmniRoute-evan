@@ -1,5 +1,13 @@
 # Existing recurring website workers
 
+## Stable shell transport supervision
+
+`stable_shell_service.py` and the two `cognilode-chatgpt-shell*.service` user-unit templates supervise a dedicated shell connector and named Cloudflare tunnel inside the existing controller container. Deploy the launcher to `/workspace/stable-shell-service.py` there before enabling the units. The connector reuses the existing `/state/shell-app-code`, `/state/shell-app-deps`, Accounts runtime, executor binding, and `/state/shell-app` authorization state. It listens on container port 5014, leaving the previous port-5013 connector alone. Its stop operation verifies the exact launcher path and role before signalling its own PID; it does not target the managing app-server or old shell connector.
+
+The tunnel reads `/state/shell-app/stable-tunnel.token`; never put that token into the unit, command line, or Git. Deployment metadata is private at `/state/shell-app/stable-tunnel.private.json`, and the credential reference is `cloudflare.tunnel.chatgpt-shell` in existing Accounts custody. The intended stable public endpoint is `https://chatgpt-shell.cognilode.com/mcp`. Creating its DNS record is not proof of endpoint or agent-side tool qualification. A previously installed app pointing at a vanished quick-tunnel URL still needs its endpoint updated/reconnected; these units do not modify ChatGPT installations.
+
+These user units supervise `docker exec`; they do not independently cap child processes inside Docker. The existing controller/executor Docker resource limits remain responsible for those processes. Boot recovery also requires the existing Docker controller to be startable and the user manager to run; the units retry but do not repair broken controller bind mounts or reconstruct missing dependencies. This is transport supervision, not a general execution environment or another agent scheduler.
+
 These are the existing deployed worker modules, retained here for review and recovery—not a second orchestration framework. They require Python 3.11+, `requests`, `filelock`, and the installed `slack-mcp-server` executable at `/app/slack-mcp-server`.
 
 `daemon.py` accepts configuration/state directories through `COGNILODE_WORKER_CONFIG` and `COGNILODE_WORKER_STATE` (defaults `/config` and `/state`). Individual workers retain independent timers, admission identities and Slack delivery state. Fleet mode discovers registered supported HTTP connections and starts the same worker for each account, with a connection-scoped key. Existing externally managed connections must be listed to avoid duplicate workers.

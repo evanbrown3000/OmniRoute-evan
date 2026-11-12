@@ -1,0 +1,16 @@
+[Unit]
+Description=Cognilode bounded ChatGPT shell named tunnel
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/docker exec cognilode-librechat-2af3e3af-codex-app-server-1 python -u /workspace/stable-shell-service.py tunnel
+ExecStop=/usr/bin/docker exec cognilode-librechat-2af3e3af-codex-app-server-1 python /workspace/stable-shell-service.py tunnel --stop
+Restart=always
+RestartSec=20
+TimeoutStopSec=30
+
+[Install]
+WantedBy=default.target
+
+
