@@ -1,4 +1,4 @@
-name: Cross-platform A2A successor handoff
+name: Cross-platform native-agent handoff with browser HAR
 
 on:
   workflow_dispatch:
@@ -12,13 +12,17 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: agent-router-cross-platform-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
-  cross-platform-handoff:
+  native-agent-handoff:
     runs-on: ubuntu-latest
     container:
       image: mcr.microsoft.com/playwright:v1.65.0-resolute
       options: --ipc=host
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Checkout task definition
         uses: actions/checkout@v4
@@ -30,7 +34,7 @@ jobs:
           npm init -y >/dev/null
           npm install --no-save playwright@1.65.0
 
-      - name: Capture browser HAR and execute cross-platform A2A turn
+      - name: Capture browser HAR and execute native agent turns
         working-directory: ${{ runner.temp }}/agent-router
         run: |
           node --input-type=module <<'NODE'
@@ -40,15 +44,37 @@ jobs:
 
           const taskText = fs.readFileSync(process.env.GITHUB_WORKSPACE + "/docs/agent-execution/cross-platform-task.md", "utf8");
           const requestId = taskText.match(/^REQUEST_ID:\s*(\S+)/mi)?.[1];
+          const primaryName = taskText.match(/^TARGET_AGENT:\s*(\S+)/mi)?.[1] || "reasoningdelegationhigh";
+          const configuredSecondary = taskText.match(/^SECONDARY_AGENT:\s*(\S+)/mi)?.[1] || "constructivecritic";
           if (!requestId) throw new Error("Missing REQUEST_ID");
           const prompt = taskText.split("## Task")[1]?.trim() || taskText;
-          const harPath = process.env.RUNNER_TEMP + "/agent-router-cross-platform.har";
+          const rawHarPath = process.env.RUNNER_TEMP + "/agent-router-native-raw.har";
+          const sanitizedHarPath = process.env.RUNNER_TEMP + "/agent-router-native-sanitized.har";
+          const summaryPath = process.env.RUNNER_TEMP + "/agent-router-native-summary.json";
 
+          const sha256 = value => createHash("sha256").update(String(value)).digest("hex");
+          const parseRpc = raw => {
+            try { return JSON.parse(raw); } catch {}
+            const dataLine = raw.split(/\r?\n/).find(line => line.startsWith("data:"));
+            if (dataLine) {
+              try { return JSON.parse(dataLine.slice(5).trim()); } catch {}
+            }
+            return null;
+          };
           const extractText = value => {
             const parts = value?.content ?? [];
-            return parts.filter(part => part.type === "text").map(part => part.text).join("\n")
-              || value?.structuredContent?.result
-              || JSON.stringify(value?.structuredContent ?? value ?? {});
+            const contentText = parts.filter(part => part?.type === "text").map(part => part.text).join("\n");
+            if (contentText) return contentText;
+            const candidates = [
+              value?.structuredContent?.result,
+              value?.structuredContent?.response,
+              value?.structuredContent?.output,
+              value?.response,
+              value?.output,
+              value?.result
+            ];
+            const found = candidates.find(item => typeof item === "string" && item.trim());
+            return found || JSON.stringify(value?.structuredContent ?? value ?? {});
           };
           const stateOf = value => String(
             value?.structuredContent?.state ??
@@ -56,245 +82,373 @@ jobs:
             value?.structuredContent?.task?.status ??
             value?.state ?? value?.status ?? value?.task?.status ?? ""
           ).toUpperCase();
+          const stateFromText = value => {
+            const match = String(value ?? "").match(/\b(?:STATUS|STATE)\s*[:=]\s*(COMPLETED|SUCCESS|SUCCEEDED|DONE|FAILED|ERROR|CANCELLED|TIMED_OUT|QUEUED|PENDING|RUNNING|IN_PROGRESS|WAITING)\b/i);
+            return match?.[1]?.toUpperCase() ?? "";
+          };
+          const taskIdOf = value =>
+            value?.structuredContent?.task_id ??
+            value?.structuredContent?.taskId ??
+            value?.structuredContent?.task?.id ??
+            value?.task_id ?? value?.taskId ?? value?.task?.id ?? null;
+          const isSuccess = state => /^(COMPLETED|SUCCESS|SUCCEEDED|DONE)$/.test(state);
+          const isFailure = state => /^(FAILED|ERROR|CANCELLED|TIMED_OUT|REJECTED)$/.test(state);
+          const isPending = state => /^(QUEUED|PENDING|RUNNING|IN_PROGRESS|WAITING)$/.test(state);
+          const deref = (schema, root) => {
+            if (!schema?.$ref) return schema ?? {};
+            const key = schema.$ref.split("/").pop();
+            return root?.$defs?.[key] ?? schema;
+          };
+          const buildArgs = (spec, text) => {
+            const schema = spec?.inputSchema ?? {};
+            const props = schema.properties ?? {};
+            if (props.payload) {
+              const payloadSchema = deref(props.payload, schema);
+              const payloadProps = payloadSchema.properties ?? {};
+              const required = payloadSchema.required ?? Object.keys(payloadProps);
+              const key = required[0] ?? Object.keys(payloadProps)[0] ?? "query";
+              return { payload: { [key]: text } };
+            }
+            const required = schema.required ?? Object.keys(props);
+            const key = required[0] ?? Object.keys(props)[0] ?? "query";
+            return { [key]: text };
+          };
 
-          let browser;
-          let context;
-          let receipt = null;
+          let browser = null;
+          let context = null;
+          let primaryReceipt = null;
           let secondaryReceipt = null;
-          let cardEvidence = null;
+          let discoveryText = "";
+          let toolNames = [];
+          let selectedSchemas = [];
+          let pricingEvidence = null;
+          let deepwikiEvidence = [];
+          let backendRequests = [];
+          let secondaryDecision = null;
+          let attempts = [];
           let failure = null;
+
+          const rpc = async (page, method, params, id, timeoutMs = 65000) => {
+            const transport = await page.evaluate(async ({ method, params, id, timeoutMs }) => {
+              const controller = new AbortController();
+              const timer = setTimeout(() => controller.abort(), timeoutMs);
+              try {
+                const response = await fetch("/mcp-http/mcp", {
+                  method: "POST",
+                  headers: { "content-type": "application/json", "accept": "application/json, text/event-stream" },
+                  body: JSON.stringify({ jsonrpc: "2.0", id, method, params }),
+                  signal: controller.signal
+                });
+                return { status: response.status, raw: await response.text() };
+              } finally {
+                clearTimeout(timer);
+              }
+            }, { method, params, id, timeoutMs });
+            const parsed = parseRpc(transport.raw);
+            if (transport.status < 200 || transport.status >= 300) {
+              throw new Error("MCP HTTP " + transport.status + ": " + transport.raw.slice(0, 1200));
+            }
+            if (parsed?.error) throw new Error("MCP error: " + JSON.stringify(parsed.error).slice(0, 1200));
+            return { status: transport.status, parsed };
+          };
+
+          const invokeAgent = async (page, toolSpecs, name, taskPrompt, id) => {
+            const spec = toolSpecs.find(tool => tool.name === name);
+            if (!spec) throw new Error("Agent tool not advertised: " + name);
+            const args = buildArgs(spec, taskPrompt);
+            const call = await rpc(page, "tools/call", { name, arguments: args }, id, 130000);
+            const initial = call.parsed?.result ?? call.parsed;
+            if (initial?.isError || call.parsed?.isError) {
+              throw new Error("Agent tool returned an error: " + extractText(initial).slice(0, 1200));
+            }
+
+            const taskId = taskIdOf(initial);
+            const initialText = extractText(initial);
+            let finalResult = initial;
+            let state = stateOf(initial) || stateFromText(initialText);
+            let waitedForTask = false;
+
+            if (taskId && !isSuccess(state) && !isFailure(state)) {
+              const waited = await rpc(page, "tools/call", {
+                name: "wait_for_task",
+                arguments: { task_id: taskId, max_wait_seconds: 300 }
+              }, id + 1000, 310000);
+              finalResult = waited.parsed?.result ?? waited.parsed;
+              if (finalResult?.isError || waited.parsed?.isError) {
+                throw new Error("wait_for_task failed for the same task ID " + taskId + ": " + extractText(finalResult).slice(0, 1200));
+              }
+              state = stateOf(finalResult) || stateFromText(extractText(finalResult)) || state;
+              waitedForTask = true;
+            }
+
+            const response = extractText(finalResult);
+            const pending = isPending(state) || /accepted and queued|queued for processing/i.test(response);
+            const failed = isFailure(state) || Boolean(finalResult?.isError);
+            const completed = call.status === 200 && !pending && !failed && response.trim().length > 120
+              && (taskId ? isSuccess(state) : (!state || isSuccess(state)));
+            return {
+              provider: "Agent Router",
+              platform: "Agent Router native platform agent",
+              agent: name,
+              httpStatus: call.status,
+              nativeTaskId: taskId,
+              initialState: stateOf(initial) || stateFromText(initialText) || "UNSPECIFIED",
+              terminalState: state || (completed ? "COMPLETED_SYNCHRONOUS_RESPONSE" : "UNVERIFIED"),
+              waitedForTask,
+              completionEvidence: taskId ? "same provider-native task ID polled/read back" : "synchronous native tool response; provider exposed no task ID",
+              completed,
+              pending,
+              responseLength: response.length,
+              responseSha256: sha256(response),
+              response
+            };
+          };
 
           try {
             browser = await chromium.launch({ headless: true });
-            context = await browser.newContext({ recordHar: { path: harPath, mode: "full", content: "embed" } });
+            context = await browser.newContext({
+              recordHar: { path: rawHarPath, mode: "full", content: "embed" }
+            });
             const page = await context.newPage();
-            const landing = await page.goto("https://agent-router.org/", { waitUntil: "domcontentloaded", timeout: 30000 });
-            if (!landing || landing.status() >= 400) throw new Error("Agent Router entrypoint failed: " + (landing?.status() ?? "no response"));
 
-            const rpc = async (method, params, id, timeoutMs = 60000) => {
-              const transport = await page.evaluate(async ({ method, params, id, timeoutMs }) => {
-                const controller = new AbortController();
-                const timer = setTimeout(() => controller.abort(), timeoutMs);
-                try {
-                  const response = await fetch("/mcp-http/mcp", {
-                    method: "POST",
-                    headers: { "content-type": "application/json", "accept": "application/json, text/event-stream" },
-                    body: JSON.stringify({ jsonrpc: "2.0", id, method, params }),
-                    signal: controller.signal
-                  });
-                  return { status: response.status, raw: await response.text() };
-                } finally {
-                  clearTimeout(timer);
-                }
-              }, { method, params, id, timeoutMs });
-
-              let parsed = null;
-              try { parsed = JSON.parse(transport.raw); }
-              catch {
-                const dataLine = transport.raw.split("\n").find(line => line.startsWith("data:"));
-                if (dataLine) { try { parsed = JSON.parse(dataLine.slice(5).trim()); } catch {} }
-              }
-              if (transport.status < 200 || transport.status >= 300) {
-                throw new Error("MCP HTTP " + transport.status + ": " + transport.raw.slice(0, 1500));
-              }
-              if (parsed?.error) throw new Error("MCP error: " + JSON.stringify(parsed.error).slice(0, 1500));
-              return { status: transport.status, parsed };
+            const pricing = await page.goto("https://www.agent-router.org/pricing", {
+              waitUntil: "domcontentloaded", timeout: 30000
+            });
+            pricingEvidence = {
+              status: pricing?.status() ?? null,
+              url: page.url(),
+              title: await page.title(),
+              excerpt: (await page.locator("body").innerText().catch(() => "")).slice(0, 1800)
             };
+            if (!pricing || pricing.status() >= 400) throw new Error("Agent Router pricing page unavailable");
 
-            const toolsResponse = await rpc("tools/list", {}, 1);
-            const toolSpecs = toolsResponse.parsed?.result?.tools ?? [];
-            if (!toolSpecs.some(tool => tool.name === "discover_agents")) throw new Error("discover_agents not advertised");
-            if (!toolSpecs.some(tool => tool.name === "a2a_call_agent")) throw new Error("a2a_call_agent not advertised");
+            for (const url of [
+              "https://deepwiki.com/cheaper-inference/OmniRoute",
+              "https://deepwiki.com/evanbrown3000/OmniRoute-evan"
+            ]) {
+              try {
+                const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+                deepwikiEvidence.push({
+                  requestedUrl: url,
+                  finalUrl: page.url(),
+                  status: response?.status() ?? null,
+                  title: await page.title()
+                });
+              } catch (error) {
+                deepwikiEvidence.push({ requestedUrl: url, error: String(error).slice(0, 400) });
+              }
+            }
 
-            const discovery = await rpc("tools/call", {
+            await page.goto("https://www.agent-router.org/", {
+              waitUntil: "domcontentloaded", timeout: 30000
+            });
+            const listed = await rpc(page, "tools/list", {}, 1);
+            const toolSpecs = listed.parsed?.result?.tools ?? [];
+            toolNames = toolSpecs.map(tool => tool.name);
+            if (!toolNames.includes("discover_agents")) throw new Error("discover_agents not advertised");
+            if (!toolNames.includes("wait_for_task")) throw new Error("wait_for_task not advertised");
+            const discovery = await rpc(page, "tools/call", {
               name: "discover_agents",
-              arguments: { query: "MCP server security, skill scanning, prompt injection, tool verification", limit: 25 }
-            }, 2, 65000);
-            const discoveryResult = discovery.parsed?.result ?? discovery.parsed;
-            const discoveryText = extractText(discoveryResult);
-
-            const registryPage = await context.newPage();
-            const registryResponse = await registryPage.goto(
-              "https://a2aregistry.org/agents/1a0ef294-48ef-44aa-9caa-31502a11b39d/",
-              { waitUntil: "domcontentloaded", timeout: 30000 }
-            );
-            const registryText = await registryPage.locator("body").innerText().catch(() => "");
-            await registryPage.close();
-
-            const cardPage = await context.newPage();
-            const cardResponse = await cardPage.goto(
-              "https://theagentforge.io/.well-known/agent-card.json",
-              { waitUntil: "domcontentloaded", timeout: 30000 }
-            );
-            const cardBody = await cardPage.locator("body").innerText().catch(() => "");
-            let agentCard = null;
-            try { agentCard = JSON.parse(cardBody); } catch {}
-            await cardPage.close();
-
-            const endpoint = agentCard?.url
-              || agentCard?.supportedInterfaces?.find(item => /JSONRPC/i.test(item.protocolBinding ?? ""))?.url
-              || "https://theagentforge.io/a2a";
-            const evidenceText = discoveryText + "\n" + registryText + "\n" + String(agentCard?.description ?? "");
-            const agentListed = /The Agent Forge/i.test(evidenceText);
-            const freeNoAccount = /free/i.test(evidenceText) && /no account|no signup|no sign-up/i.test(evidenceText);
-            const taskVerified = /task verified|100\.0%|100% uptime/i.test(evidenceText);
-            const production = /^https:\/\/theagentforge\.io\/a2a\/?$/.test(endpoint) && !/staging|sandbox|canary/i.test(endpoint);
-
-            cardEvidence = {
-              registryHttpStatus: registryResponse?.status() ?? null,
-              cardHttpStatus: cardResponse?.status() ?? null,
-              agentName: agentCard?.name ?? "The Agent Forge",
-              agentVersion: agentCard?.version ?? null,
-              endpoint,
-              skills: (agentCard?.skills ?? []).map(skill => ({ id: skill.id, name: skill.name })),
-              agentListed,
-              freeNoAccount,
-              taskVerified,
-              production
-            };
-            if (!agentListed || !freeNoAccount || !taskVerified || !production) {
-              throw new Error("Agent did not pass live free/no-account, health, and production checks: " + JSON.stringify(cardEvidence));
-            }
-
-            const call = await rpc("tools/call", {
-              name: "a2a_call_agent",
               arguments: {
-                agent_url: endpoint,
-                message: "Correlation ID: " + requestId + "\n\n" + prompt,
-                timeout_seconds: 120
+                query: "Independent reasoning and critique for a durable multi-agent federation with native provider execution, remote browser sessions, and completion receipts",
+                limit: 25
               }
-            }, 3, 130000);
-            const result = call.parsed?.result ?? call.parsed;
-            const responseText = extractText(result);
-            const state = stateOf(result);
-            const queued = /^(QUEUED|PENDING|RUNNING|IN_PROGRESS|WAITING)$/.test(state)
-              || /\bSTATUS\s*[:=]\s*(QUEUED|PENDING|RUNNING|IN_PROGRESS|WAITING)\b/i.test(responseText)
-              || /accepted and queued|queued for processing/i.test(responseText);
-            const failed = Boolean(result?.isError || call.parsed?.error)
-              || /^(FAILED|ERROR|CANCELLED|TIMED_OUT)$/.test(state)
-              || /\bSTATUS\s*[:=]\s*(FAILED|ERROR|CANCELLED|TIMED_OUT)\b/i.test(responseText);
-            const completed = call.status === 200 && !queued && !failed && responseText.trim().length > 120;
+            }, 2, 65000);
+            discoveryText = extractText(discovery.parsed?.result ?? discovery.parsed);
 
-            receipt = {
-              requestId,
-              provider: "The Agent Forge",
-              providerPlatform: "Independent A2A Registry provider",
-              transport: "Agent Router MCP / a2a_call_agent",
-              endpoint,
-              httpStatus: call.status,
-              nativeTaskId: result?.structuredContent?.task_id ?? result?.task_id ?? null,
-              terminalState: state || (completed ? "COMPLETED_SYNCHRONOUS_RESPONSE" : "UNVERIFIED"),
-              completed,
-              responseLength: responseText.length,
-              responseSha256: createHash("sha256").update(responseText).digest("hex"),
-              response: responseText
-            };
+            const primaryPrompt = [
+              "Correlation ID: " + requestId,
+              "You are assigned to perform the independent architecture review below. Read the complete task and return the substantive result, not a plan for doing the task.",
+              prompt,
+              "The parent will only count this assignment as complete if your native task reaches a terminal success state and this response is read back."
+            ].join("\n\n");
 
-            const bucket = parseInt(createHash("sha256").update(requestId).digest("hex").slice(0, 8), 16) % 100;
-            const secondHopSelected = bucket < 36;
-            const secondHopDecision = { requestId, bucket, threshold: 36, selected: secondHopSelected };
-
-            if (secondHopSelected) {
-              const plannerSpec = toolSpecs.find(tool => tool.name === "taskplanner");
-              if (!plannerSpec) throw new Error("36% second-hop selected but taskplanner is unavailable");
-              const plannerCall = await rpc("tools/call", {
-                name: "taskplanner",
-                arguments: {
-                  payload: {
-                    task_description: "Independently critique the completed cross-platform security review for OmniRoute. Identify missing evidence, systemic risks, and the highest-leverage durable architecture improvement. Correlation ID: " + requestId
-                  }
+            const primaryNames = [primaryName, "firstprinciplesanalyst", "constructivecritic", "taskplanner"];
+            for (const name of [...new Set(primaryNames)]) {
+              if (!toolNames.includes(name)) continue;
+              try {
+                const receipt = await invokeAgent(page, toolSpecs, name, primaryPrompt, 100 + attempts.length * 10);
+                attempts.push({ agent: name, status: receipt.completed ? "completed" : receipt.pending ? "pending" : "incomplete", taskId: receipt.nativeTaskId, terminalState: receipt.terminalState });
+                if (receipt.completed) {
+                  primaryReceipt = receipt;
+                  break;
                 }
-              }, 4, 65000);
-              const plannerResult = plannerCall.parsed?.result ?? plannerCall.parsed;
-              let plannerText = extractText(plannerResult);
-              let plannerState = stateOf(plannerResult);
-              const plannerTaskId = plannerResult?.structuredContent?.task_id ?? plannerResult?.task_id ?? null;
-              if (plannerTaskId && !/^(COMPLETED|SUCCESS|SUCCEEDED|DONE)$/.test(plannerState)) {
-                const waited = await rpc("tools/call", {
-                  name: "wait_for_task",
-                  arguments: { task_id: plannerTaskId, max_wait_seconds: 300 }
-                }, 5, 310000);
-                const waitedResult = waited.parsed?.result ?? waited.parsed;
-                plannerText = extractText(waitedResult);
-                plannerState = stateOf(waitedResult) || plannerState;
+                if (receipt.pending) {
+                  primaryReceipt = receipt;
+                  break;
+                }
+              } catch (error) {
+                attempts.push({ agent: name, status: "failed", error: String(error).slice(0, 1600) });
               }
-              const plannerComplete = plannerCall.status === 200
-                && !plannerResult?.isError
-                && /^(COMPLETED|SUCCESS|SUCCEEDED|DONE)$/.test(plannerState)
-                && plannerText.trim().length > 120;
-              secondaryReceipt = {
-                provider: "Agent Router MCP platform",
-                agent: "taskplanner",
-                taskId: plannerTaskId,
-                terminalState: plannerState || "UNVERIFIED",
-                completed: plannerComplete,
-                response: plannerText
-              };
             }
 
-            console.log("CROSS_PLATFORM_A2A_RESULT=" + JSON.stringify(receipt));
-            console.log("DETERMINISTIC_36_PERCENT_HANDOFF=" + JSON.stringify(secondHopDecision));
-            if (secondaryReceipt) console.log("SECONDARY_AGENT_RESULT=" + JSON.stringify(secondaryReceipt));
+            const bucket = parseInt(sha256(requestId).slice(0, 8), 16) % 100;
+            const secondHopSelected = bucket < 36;
+            secondaryDecision = {
+              requestId,
+              bucket,
+              threshold: 36,
+              selected: secondHopSelected,
+              executed: false,
+              rule: "sha256(requestId)[0:8] mod 100 < 36"
+            };
 
-            const summary = [
-              "## Cross-platform A2A execution",
-              "",
-              "- Correlation ID: " + requestId,
-              "- External provider: " + receipt.provider,
-              "- Endpoint: " + receipt.endpoint,
-              "- Transport: " + receipt.transport,
-              "- Terminal state: " + receipt.terminalState,
-              "- Completed: " + receipt.completed,
-              "- Native task ID: " + (receipt.nativeTaskId ?? "No task ID; synchronous response"),
-              "- Response SHA-256: " + receipt.responseSha256,
-              "",
-              "### External agent response",
-              "",
-              receipt.response.slice(0, 12000),
-              "",
-              "### Deterministic 36% second-hop rule",
-              "",
-              JSON.stringify(secondHopDecision),
-              secondaryReceipt ? "\n### Secondary agent response\n\n" + secondaryReceipt.response.slice(0, 6000) : ""
-            ].join("\n");
-            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary + "\n");
+            if (primaryReceipt?.completed && secondHopSelected) {
+              const candidate = configuredSecondary === primaryReceipt.agent ? "taskplanner" : configuredSecondary;
+              const secondaryName = toolNames.includes(candidate) ? candidate
+                : toolNames.includes("constructivecritic") && primaryReceipt.agent !== "constructivecritic" ? "constructivecritic"
+                : toolNames.includes("taskplanner") ? "taskplanner" : null;
+              if (!secondaryName) throw new Error("36% secondary branch selected, but no eligible second agent was advertised");
+              selectedSchemas = toolSpecs.filter(tool => [primaryReceipt.agent, secondaryName].includes(tool.name))
+                .map(tool => ({ name: tool.name, inputSchema: tool.inputSchema }));
+              const secondaryPrompt = [
+                "Correlation ID: " + requestId,
+                "You are the independent second agent in a 36% peer-review branch. Critique the primary agent's completed result, identify unsupported claims and missing architecture risks, and provide your own recommendation.",
+                "Primary agent: " + primaryReceipt.agent,
+                "Primary result:\n" + primaryReceipt.response.slice(0, 10000),
+                "Original assignment:\n" + prompt
+              ].join("\n\n");
+              secondaryReceipt = await invokeAgent(page, toolSpecs, secondaryName, secondaryPrompt, 500);
+              secondaryDecision.executed = true;
+              secondaryDecision.agent = secondaryName;
+            } else if (secondHopSelected) {
+              secondaryDecision.skippedReason = primaryReceipt?.pending
+                ? "Primary task remained nonterminal; no duplicate parallel work was launched."
+                : "Primary agent did not complete successfully.";
+            }
+
+            selectedSchemas = toolSpecs.filter(tool => [primaryReceipt?.agent, secondaryReceipt?.agent].includes(tool.name))
+              .map(tool => ({ name: tool.name, inputSchema: tool.inputSchema }));
           } catch (error) {
             failure = String(error);
-            console.log("CROSS_PLATFORM_A2A_ERROR=" + JSON.stringify({ requestId, error: failure.slice(0, 4000) }));
           } finally {
             if (context) await context.close().catch(() => {});
             if (browser) await browser.close().catch(() => {});
           }
 
-          let backendRequests = [];
-          if (fs.existsSync(harPath)) {
-            const har = JSON.parse(fs.readFileSync(harPath, "utf8"));
-            backendRequests = (har.log?.entries ?? []).map(entry => ({
-              method: entry.request?.method,
-              url: entry.request?.url,
-              status: entry.response?.status,
-              mimeType: entry.response?.content?.mimeType
-            })).filter(entry => /agent-router|a2aregistry|theagentforge|mcp-http|\/a2a/i.test(entry.url ?? ""));
+          if (fs.existsSync(rawHarPath)) {
+            try {
+              const raw = JSON.parse(fs.readFileSync(rawHarPath, "utf8"));
+              const safeUrl = value => {
+                try {
+                  const url = new URL(value);
+                  url.search = "";
+                  url.hash = "";
+                  return url.toString();
+                } catch {
+                  return String(value ?? "").split(/[?#]/, 1)[0];
+                }
+              };
+              const entries = (raw.log?.entries ?? []).map(entry => ({
+                startedDateTime: entry.startedDateTime,
+                time: entry.time,
+                request: {
+                  method: entry.request?.method,
+                  url: safeUrl(entry.request?.url)
+                },
+                response: {
+                  status: entry.response?.status,
+                  statusText: entry.response?.statusText,
+                  content: {
+                    mimeType: entry.response?.content?.mimeType,
+                    size: entry.response?.content?.size
+                  }
+                },
+                timings: entry.timings
+              }));
+              const sanitized = {
+                log: {
+                  version: raw.log?.version ?? "1.2",
+                  creator: { name: "OmniRoute remote evidence workflow", version: "1" },
+                  pages: [],
+                  entries
+                }
+              };
+              fs.writeFileSync(sanitizedHarPath, JSON.stringify(sanitized, null, 2));
+              backendRequests = entries.filter(entry => /agent-router|deepwiki|mcp-http/i.test(entry.request.url));
+              fs.unlinkSync(rawHarPath);
+            } catch (error) {
+              failure = failure || ("HAR sanitization failed: " + String(error));
+            }
           }
-          const harEvidence = { requestId, harPath, backendRequests };
-          fs.writeFileSync(
-            process.env.RUNNER_TEMP + "/agent-router-cross-platform-summary.json",
-            JSON.stringify({ receipt, secondaryReceipt, cardEvidence, harEvidence, failure }, null, 2)
-          );
-          console.log("BROWSER_HAR_EVIDENCE=" + JSON.stringify(harEvidence));
 
-          if (failure || !receipt?.completed || (secondaryReceipt && !secondaryReceipt.completed)) {
-            process.exitCode = 1;
-          }
+          const primaryComplete = Boolean(primaryReceipt?.completed);
+          const secondaryRequired = Boolean(secondaryDecision?.selected && primaryComplete);
+          const secondaryComplete = !secondaryRequired || Boolean(secondaryReceipt?.completed);
+          const summary = {
+            requestId,
+            primaryAgentRequested: primaryName,
+            primaryAttempts: attempts,
+            primaryReceipt,
+            secondaryDecision,
+            secondaryReceipt,
+            browser: { pricingEvidence, deepwikiEvidence, backendRequests },
+            discoveredToolNames: toolNames,
+            selectedToolSchemas: selectedSchemas,
+            promptSha256: sha256(prompt),
+            sanitizedHarPath: fs.existsSync(sanitizedHarPath) ? sanitizedHarPath : null,
+            failure,
+            completed: primaryComplete && secondaryComplete && !failure
+          };
+          fs.writeFileSync(summaryPath, JSON.stringify(summary, null, 2));
+          console.log("NATIVE_AGENT_FEDERATION_RECEIPT=" + JSON.stringify({
+            requestId,
+            primaryAgent: primaryReceipt?.agent ?? null,
+            nativeTaskId: primaryReceipt?.nativeTaskId ?? null,
+            terminalState: primaryReceipt?.terminalState ?? "UNVERIFIED",
+            primaryCompleted: primaryComplete,
+            secondaryDecision,
+            secondaryAgent: secondaryReceipt?.agent ?? null,
+            secondaryTaskId: secondaryReceipt?.nativeTaskId ?? null,
+            secondaryState: secondaryReceipt?.terminalState ?? null,
+            secondaryCompleted: secondaryReceipt?.completed ?? false,
+            failure
+          }));
+          console.log("SANITIZED_BROWSER_HAR=" + JSON.stringify({
+            path: sanitizedHarPath,
+            entries: backendRequests.length,
+            requests: backendRequests
+          }));
+
+          const markdown = [
+            "## Native agent federation execution",
+            "",
+            "- Request: " + requestId,
+            "- Primary agent: " + (primaryReceipt?.agent ?? "none completed"),
+            "- Primary task ID: " + (primaryReceipt?.nativeTaskId ?? "not exposed"),
+            "- Primary terminal state: " + (primaryReceipt?.terminalState ?? "UNVERIFIED"),
+            "- Primary completed: " + primaryComplete,
+            "- Secondary decision: " + JSON.stringify(secondaryDecision),
+            "- Secondary agent: " + (secondaryReceipt?.agent ?? "not executed"),
+            "- Secondary task ID: " + (secondaryReceipt?.nativeTaskId ?? "not exposed"),
+            "- Secondary terminal state: " + (secondaryReceipt?.terminalState ?? "not executed"),
+            "- Secondary completed: " + (secondaryReceipt?.completed ?? false),
+            "- Sanitized HAR: " + (fs.existsSync(sanitizedHarPath) ? "captured" : "unavailable"),
+            "",
+            "### Primary result",
+            "",
+            (primaryReceipt?.response ?? "No completed primary result.").slice(0, 12000),
+            "",
+            "### Secondary result",
+            "",
+            (secondaryReceipt?.response ?? "No secondary result.").slice(0, 6000),
+            "",
+            "### Failure",
+            "",
+            failure ?? "none"
+          ].join("\n");
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, markdown + "\n");
+
+          if (!primaryComplete || !secondaryComplete || failure) process.exitCode = 1;
           NODE
 
-      - name: Retain HAR and execution receipt
+      - name: Retain sanitized HAR and native execution receipt
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: agent-router-cross-platform-${{ github.run_id }}
+          name: agent-router-native-federation-${{ github.run_id }}
           path: |
-            ${{ runner.temp }}/agent-router-cross-platform.har
-            ${{ runner.temp }}/agent-router-cross-platform-summary.json
+            ${{ runner.temp }}/agent-router-native-sanitized.har
+            ${{ runner.temp }}/agent-router-native-summary.json
           if-no-files-found: warn
           retention-days: 7
