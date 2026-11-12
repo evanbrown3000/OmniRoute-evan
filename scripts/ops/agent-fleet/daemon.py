@@ -336,12 +336,16 @@ def dispatch_omniroute(state, cfg):
                         delta = choice.get('delta') or {}
                         if isinstance(delta.get('content'), str): text += delta['content']
                         if isinstance(delta.get('reasoning_content'), str): thinking += delta['reasoning_content']
-                        if choice.get('finish_reason') is not None: finished = True
+                        if choice.get('finish_reason') is not None:
+                            record['finish_reason'] = choice['finish_reason']
+                            finished = choice['finish_reason'] in ('stop', 'end_turn')
                     record['parts'] = {'reply': ['Final reply' if finished else 'Reply', text],
                                        'thinking': ['Thinking', thinking]}
                     if event.get('claude_web'): record['native_metadata'] = event['claude_web']
                     record['last_progress_at'] = time.time(); save()
-                record['status'] = 'completed' if finished else 'stream_ended_without_final'
+                record['status'] = ('completed' if finished else
+                    'awaiting_tool_or_final' if record.get('finish_reason') == 'tool_calls' else
+                    'stream_ended_without_final')
                 record['completed_at'] = time.time() if finished else None
                 save()
         except Exception as error:

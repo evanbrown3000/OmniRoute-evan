@@ -51,6 +51,35 @@ class FleetAdmissionTest(unittest.TestCase):
 
 
 class ServerOwnedToolTransportTest(unittest.TestCase):
+    def test_stream_tool_handoff_is_not_a_completed_response(self):
+        for reason in ['tool_calls', 'length', 'content_filter', 'stop', 'end_turn']:
+            with self.subTest(reason=reason), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                with patch.dict(os.environ, {'COGNILODE_WORKER_STATE': str(root / 'state')}):
+                    spec = importlib.util.spec_from_file_location('stream_daemon', str(DAEMON_SOURCE))
+                    module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+                access = root / 'gateway.json'
+                access.write_text(json.dumps({'origin': 'http://localhost:20128', 'api_key': 'test-key'}))
+                (module.STATE / 'prompt.md').write_text('Unchanged owner instruction.')
+                cfg = {'model': 'deepseek-web/deepseek-chat', 'platform': 'DeepSeek',
+                       'gateway_access_file': str(access)}
+                response = Mock(); response.status_code = 200
+                response.__enter__ = Mock(return_value=response)
+                response.__exit__ = Mock(return_value=None)
+                response.iter_lines.return_value = [b'data: ' + json.dumps({'choices': [{
+                    'delta': {'content': 'Provider output'}, 'finish_reason': reason}]}).encode(),
+                    b'data: [DONE]']
+                def thread(**kwargs):
+                    result = Mock(); result.start.side_effect = kwargs['target']; return result
+                with patch.object(module.requests, 'post', return_value=response), \
+                     patch.object(module.threading, 'Thread', side_effect=thread):
+                    module.dispatch_omniroute({'tick_id': 'test', 'prompt_sha256': 'owner'}, cfg)
+                record = json.loads(next((module.STATE / 'admissions').glob('*.json')).read_text())
+                completed = reason in ('stop', 'end_turn')
+                self.assertEqual(record['status'] == 'completed', completed)
+                self.assertEqual(record.get('completed_at') is not None, completed)
+                self.assertEqual(record['parts']['reply'][0], 'Final reply' if completed else 'Reply')
+
     def test_uses_existing_router_tool_loop_and_preserves_owner_prompt(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
