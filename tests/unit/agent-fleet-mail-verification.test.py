@@ -33,7 +33,9 @@ class MailVerificationTests(unittest.TestCase):
     def context(self):
         value = {"gmail_address": "owner@example.test", "gmail_app_password": "fixture-private-password"}
         reader = SimpleNamespace(read=lambda *args, **kwargs: {"value": value})
-        return SimpleNamespace(reader=reader, account={"metadata": {"credential_ref": "owned-mail"}}, used_credentials=set())
+        return SimpleNamespace(reader=reader, account={"id": "mailbox", "metadata": {}},
+            method={"recipes": {"mailboxes": {"mailbox": {"credential_ref": "owned-mail"}}}},
+            used_credentials=set())
 
     def test_inventory_does_not_read_credentials_or_connect(self):
         context = self.context()
@@ -64,7 +66,7 @@ class MailVerificationTests(unittest.TestCase):
             def logout(self): self.calls.append(("logout",))
         client = Client()
         with patch.object(mail.imaplib, "IMAP4_SSL", return_value=client):
-            result = mail.run(self.context(), "verification_code", {"sender_domain": "deepseek.com", "after": now - 1})
+            result = mail.run(self.context(), "verification_code", {"sender_domain": "deepseek.com", "after": now})
         self.assertEqual(result["code"], "123456")
         self.assertIn(("select", "INBOX", True), client.calls)
         self.assertIn(("fetch", b"1", "(INTERNALDATE BODY.PEEK[]<0.65536>)"), client.calls)

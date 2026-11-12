@@ -53,7 +53,10 @@ def verification_from_message(raw, *, sender_domain, recipient, code_length):
 def run(context, operation, arguments):
     if operation not in ("inventory", "qualify", "verification_code"):
         raise ValueError("Unsupported mailbox verification operation")
-    reference = context.account["metadata"]["credential_ref"]
+    binding = context.method.get("recipes", {}).get("mailboxes", {}).get(context.account["id"])
+    if not binding:
+        raise ValueError("Mailbox verification binding is not enrolled")
+    reference = binding["credential_ref"]
     if operation == "inventory":
         return {"capabilities": ["verification_code"], "credential_ref": reference,
                 "network_probe_performed": False}
@@ -67,6 +70,7 @@ def run(context, operation, arguments):
             raise ValueError("A signup request timestamp within fifteen minutes is required")
         if type(digits) is not int or not 4 <= digits <= 8:
             raise ValueError("Verification code length must be four to eight digits")
+        after = int(after)  # IMAP INTERNALDATE has one-second precision.
     credential = context.reader.read(reference, fresh=False)["value"]
     context.used_credentials.add(reference)
     address = credential["gmail_address"]
@@ -134,9 +138,16 @@ def main():
             pass
         if existing and existing["provider"] != PROVIDER:
             raise ValueError("Account belongs to another provider")
-        retain_method(runtime.reader, provider=PROVIDER, source=Path(__file__).read_text(),
+        recipes = {}
+        try:
+            previous, _ = runtime.providers.method(PROVIDER)
+            recipes = previous.get("recipes", {})
+        except KeyError:
+            pass
+        recipes.setdefault("mailboxes", {})[args.account] = {"credential_ref": args.credential_ref}
+        retain_method(runtime.reader, provider=PROVIDER, source=Path(__file__).read_text(), recipes=recipes,
                       allowed_hosts=["imap.gmail.com"], operations=["inventory", "qualify", "verification_code"])
-        if not existing or existing.get("metadata", {}).get("credential_ref") != args.credential_ref:
+        if not existing:
             runtime.reader.put_account({"id": args.account, "provider": PROVIDER,
                 "label": "Owned-mail signup verification capability (not a new vendor account)",
                 "state": "configured", "expected_revision": existing["revision"] if existing else 0,
@@ -147,7 +158,7 @@ def main():
     if args.operation == "qualify" and result["result"].get("status") == "authenticated":
         current = runtime.reader.read_account(args.account, fresh=False)
         runtime.reader.put_account({"id": args.account, "provider": PROVIDER,
-            "expected_revision": current["revision"], "state": "authenticated",
+            "expected_revision": current["revision"], "state": "capability_ready",
             "request_id": "mailbox-verification-qualified-" + str(int(time.time())),
             "observations": {"qualification": {"protocol": "IMAP4_SSL", "observed_at": time.time(),
                                               "message_reads": 0}}})
