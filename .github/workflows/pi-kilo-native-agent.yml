@@ -100,17 +100,36 @@ jobs:
       - name: Prepare read-only baseline and candidate snapshots
         env:
           EVENT_SHA: ${{ github.sha }}
+          REQUEST_PATH: ${{ steps.request.outputs.path }}
         run: |
           set -euo pipefail
-          git fetch --no-tags origin release/v3.8.54 agent-router-a2a-20261112-06
+          CANDIDATE_BRANCH="agent-router-a2a-20261112-06"
+          CANDIDATE_REF="refs/remotes/origin/$CANDIDATE_BRANCH"
+          BASELINE_SHA="$EVENT_SHA"
+          git fetch --no-tags origin "+refs/heads/$CANDIDATE_BRANCH:$CANDIDATE_REF"
+          CANDIDATE_SHA="$(git rev-parse "$CANDIDATE_REF")"
+          export CANDIDATE_SHA
           mkdir -p "$RUNNER_TEMP/pi-kilo/review/baseline" "$RUNNER_TEMP/pi-kilo/review/candidate"
-          git archive origin/release/v3.8.54 | tar -x -C "$RUNNER_TEMP/pi-kilo/review/baseline"
-          git archive origin/agent-router-a2a-20261112-06 | tar -x -C "$RUNNER_TEMP/pi-kilo/review/candidate"
-          git diff --stat origin/release/v3.8.54...origin/agent-router-a2a-20261112-06 > "$RUNNER_TEMP/pi-kilo/review/diff-stat.txt"
-          git diff --name-status origin/release/v3.8.54...origin/agent-router-a2a-20261112-06 > "$RUNNER_TEMP/pi-kilo/review/diff-names.txt"
-          git diff --no-ext-diff origin/release/v3.8.54...origin/agent-router-a2a-20261112-06 > "$RUNNER_TEMP/pi-kilo/review/diff.patch"
-          printf 'Baseline: release/v3.8.54\nCandidate: agent-router-a2a-20261112-06\n' > "$RUNNER_TEMP/pi-kilo/review/branches.txt"
-          printf 'Parent workflow run: 43248788189\nParent native task: 9170db87-ca47-4825-a704-d68fe0c56807\n' >> "$RUNNER_TEMP/pi-kilo/review/branches.txt"
+          git archive "$BASELINE_SHA" | tar -x -C "$RUNNER_TEMP/pi-kilo/review/baseline"
+          git archive "$CANDIDATE_REF" | tar -x -C "$RUNNER_TEMP/pi-kilo/review/candidate"
+          git diff --stat "$BASELINE_SHA" "$CANDIDATE_REF" > "$RUNNER_TEMP/pi-kilo/review/diff-stat.txt"
+          git diff --name-status "$BASELINE_SHA" "$CANDIDATE_REF" > "$RUNNER_TEMP/pi-kilo/review/diff-names.txt"
+          git diff --no-ext-diff "$BASELINE_SHA" "$CANDIDATE_REF" > "$RUNNER_TEMP/pi-kilo/review/diff.patch"
+          python - <<'PY'
+          import json, os, pathlib
+          request = json.loads(pathlib.Path(os.environ["REQUEST_PATH"]).read_text(encoding="utf-8"))
+          baseline_sha = os.environ["EVENT_SHA"]
+          candidate_sha = os.environ["CANDIDATE_SHA"]
+          lines = [
+              f"Baseline: release/v3.8.54@{baseline_sha}",
+              f"Candidate: agent-router-a2a-20261112-06@{candidate_sha}",
+              f"Parent workflow run: {request['parent_workflow_run_id']}",
+              f"Parent native task: {request['parent_native_task_id']}",
+          ]
+          (pathlib.Path(os.environ["RUNNER_TEMP"]) / "pi-kilo" / "review" / "branches.txt").write_text(
+              "\n".join(lines) + "\n", encoding="utf-8"
+          )
+          PY
 
       - name: Install Pi agent runtime and Kilo provider
         run: |
