@@ -2,8 +2,6 @@ name: Cross-platform agent review with browser HAR and A2A fallback
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "35 7 * * *"
   push:
     branches:
       - release/v3.8.54
@@ -56,6 +54,7 @@ jobs:
           let pricingTitle = "";
           let pricingText = "";
           let browserMcpProbe = null;
+          let externalAgentCard = null;
           const deepwikiPages = [];
 
           try {
@@ -89,6 +88,34 @@ jobs:
               }
             }
 
+            try {
+              const response = await page.goto("https://agenttrafficlab.com/.well-known/agent-card.json", {
+                waitUntil: "domcontentloaded",
+                timeout: 30000
+              });
+              const cardText = (await page.locator("body").innerText().catch(() => "")).slice(0, 6000);
+              let card = null;
+              try { card = JSON.parse(cardText); } catch {}
+              const paymentModel = (card?.capabilities?.extensions ?? [])
+                .map(extension => extension?.params?.payment?.model)
+                .find(Boolean) ?? null;
+              externalAgentCard = {
+                url: page.url(),
+                status: response?.status() ?? null,
+                name: card?.name ?? null,
+                protocolVersion: card?.protocolVersion ?? null,
+                version: card?.version ?? null,
+                paymentModel,
+                skills: (card?.skills ?? []).map(skill => skill.id ?? skill.name).filter(Boolean).slice(0, 20),
+                excerpt: cardText.slice(0, 1200)
+              };
+            } catch (error) {
+              externalAgentCard = {
+                url: "https://agenttrafficlab.com/.well-known/agent-card.json",
+                error: String(error).slice(0, 500)
+              };
+            }
+
             await page.goto("https://agent-router.org/", {
               waitUntil: "domcontentloaded",
               timeout: 30000
@@ -103,7 +130,7 @@ jobs:
                       "accept": "application/json, text/event-stream"
                     },
                     body: JSON.stringify({ jsonrpc: "2.0", id, method, params }),
-                    signal: AbortSignal.timeout(70000)
+                    signal: AbortSignal.timeout(120000)
                   });
                   const raw = await response.text();
                   let parsed;
@@ -130,43 +157,88 @@ jobs:
                     }
                   }, "browser-har-agent-discovery");
                 }
+                const a2aAgentUrl = "https://agenttrafficlab.com/a2a";
+                const a2aMessage = [
+                  "Use atl_complete_task (not only atl_decide) to execute a bounded independent architecture research task for this public repository:",
+                  "https://github.com/evanbrown3000/OmniRoute-evan",
+                  "Assess durable provider-native agent execution and cross-platform handoffs. Preserve these ownership boundaries: Pipeline is the sole recurring scheduler and lease/retry owner; WorkEpisode owns durable parent/child task and turn identity; B4PT0R owns provider-native execution; ComputerUseX owns browser sessions and HAR; Accounts owns encrypted credential custody; Networks owns provider resources and placement; OmniRoute owns inference routing and A2A/MCP transport.",
+                  "Compare the strongest historical branches agent-router-a2a-20261112-05 and agent-router-a2a-20261112-06 against release/v3.8.54. Focus on deterministic 36% peer selection, exact native task polling/readback, primary/secondary separation, duplicate suppression, sanitized HAR, and durable receipts.",
+                  "Research public GitHub projects and official documentation for A2A 1.0, OpenHands Agent Server, Agno AgentOS, LangGraph, Letta, Cloudflare Browser Run, Vercel Sandbox, Modal, Daytona, Browserbase, Browserless, E2B, and Kilo Code. Distinguish agent-native execution from inference and raw compute; distinguish recurring free allowances from one-time credits.",
+                  "Return an evidence-backed recommendation with concrete public source URLs, the actual provider route used, task/response/context identifiers, provider-declared state, and the result.",
+                  "Use only your no-cost public route. Do not invoke paid tools or paid providers, x402, request a wallet, request credentials, create accounts, or submit payment. Do not access private data. If no eligible free execution route exists, return that explicitly instead of a paid fallback."
+                ].join("\n");
                 let a2a = null;
                 if (names.includes("a2a_call_agent")) {
                   a2a = await rpc("tools/call", {
                     name: "a2a_call_agent",
                     arguments: {
-                      agent_url: "https://shop.lordevo.com/a2a",
-                      message: [
-                        "Use only your free preflight capability to check whether a no-cost fetch of this public repository URL is available:",
-                        "https://github.com/evanbrown3000/OmniRoute-evan/tree/agent-router-a2a-20261112-05",
-                        "Do not invoke a paid fetch, paid site check, or any other paid skill. Do not initiate x402, request a wallet, request credentials, or submit a payment.",
-                        "Return the actual preflight result, explicit task state, and context ID. A capability description alone is not task completion."
-                      ].join("\n"),
-                      timeout_seconds: 45
+                      agent_url: a2aAgentUrl,
+                      message: a2aMessage,
+                      timeout_seconds: 90
                     }
                   }, "browser-har-a2a-turn");
                 }
                 const a2aResult = a2a?.parsed?.result;
+                const a2aStructured = a2aResult?.structuredContent ?? a2aResult ?? {};
+                const a2aTaskObject = a2aStructured?.task
+                  ?? (a2aStructured?.status && typeof a2aStructured.status === "object" && a2aStructured?.id ? a2aStructured : null);
+                const a2aMessageObject = a2aStructured?.message
+                  ?? (a2aStructured?.messageId ? a2aStructured : null);
                 const a2aText = (a2aResult?.content ?? [])
                   .filter(item => item.type === "text")
                   .map(item => item.text)
                   .join("\n") || JSON.stringify(a2aResult ?? a2a?.parsed ?? {});
-                const a2aState = a2aText.match(/\bSTATE\s*[:=]\s*([A-Z_-]+)/i)?.[1]?.toUpperCase() ?? "";
-                const a2aContextId = a2aText.match(/\bCONTEXT_ID\s*[:=]\s*([A-Za-z0-9._:-]+)/i)?.[1] ?? null;
+                const a2aTaskId = a2aStructured?.task_id
+                  || a2aStructured?.taskId
+                  || a2aTaskObject?.id
+                  || a2aText.match(/\bTASK[_ -]?ID\s*[:=]\s*([A-Za-z0-9._:-]+)/i)?.[1]
+                  || null;
+                const a2aResponseId = a2aStructured?.responseId
+                  || a2aStructured?.messageId
+                  || a2aMessageObject?.messageId
+                  || null;
+                const a2aState = String(
+                  a2aTaskObject?.status?.state
+                  || a2aStructured?.status?.state
+                  || a2aStructured?.state
+                  || a2aText.match(/\b(?:STATE|STATUS)\s*[:=]\s*([A-Z_-]+)/i)?.[1]
+                  || ""
+                ).toUpperCase();
+                const a2aContextId = a2aTaskObject?.contextId
+                  || a2aMessageObject?.contextId
+                  || a2aStructured?.contextId
+                  || a2aStructured?.context_id
+                  || a2aText.match(/\bCONTEXT_ID\s*[:=]\s*([A-Za-z0-9._:-]+)/i)?.[1]
+                  || null;
+                const a2aIdentityPresent = Boolean(a2aTaskId || a2aResponseId || a2aContextId);
+                const a2aSubstantive = a2aText.trim().length > 200
+                  && /(result|outcome|recommendation|source|evidence)/i.test(a2aText);
                 const a2aCompleted = a2a?.status === 200
                   && /^(COMPLETED|SUCCESS|SUCCEEDED|DONE)$/.test(a2aState)
-                  && a2aText.trim().length > 40;
+                  && a2aIdentityPresent
+                  && a2aSubstantive;
+                const a2aTaskReadbackTools = specs
+                  .filter(tool => /a2a.*(task|get|status|wait)|(task|get|status|wait).*a2a/i.test(tool.name))
+                  .map(tool => ({ name: tool.name, inputSchema: tool.inputSchema }));
+                const a2aToolSchema = specs.find(tool => tool.name === "a2a_call_agent")?.inputSchema ?? null;
                 return {
                   status: listed.status,
                   toolNames: names,
                   discoveryStatus: discovery?.status ?? null,
                   discoveryExcerpt: discovery?.raw?.slice(0, 5000) ?? null,
-                  a2aAgentUrl: "https://shop.lordevo.com/a2a",
+                  a2aAgentName: "Agent Traffic Lab",
+                  a2aAgentUrl,
+                  a2aToolSchema,
+                  a2aTaskReadbackTools,
                   a2aStatus: a2a?.status ?? null,
+                  a2aTaskId,
+                  a2aResponseId,
                   a2aState,
                   a2aContextId,
+                  a2aIdentityPresent,
                   a2aCompleted,
-                  a2aText: a2aText.slice(0, 10000),
+                  a2aSubstantive,
+                  a2aText: a2aText.slice(0, 12000),
                   a2aError: a2a?.parsed?.error ?? a2aResult?.isError ?? null
                 };
               });
@@ -202,6 +274,7 @@ jobs:
             pricingSaysNoSignup: /no sign-up/i.test(pricingText),
             pricingExcerpt: pricingText,
             browserMcpProbe,
+            externalAgentCard,
             deepwikiPages,
             backendRequests: requests
           }));
@@ -287,12 +360,31 @@ jobs:
             throw new Error(`Unable to load the current agent task: HTTP ${taskResponse.status}`);
           }
           const currentTask = await taskResponse.text();
+          const agentCardVerified = externalAgentCard?.status === 200
+            && externalAgentCard?.name === "Agent Traffic Lab"
+            && externalAgentCard?.paymentModel === "free";
           const crossPlatformA2A = {
-            agentUrl: browserMcpProbe?.a2aAgentUrl ?? null,
+            provider: "Agent Traffic Lab",
+            agentName: browserMcpProbe?.a2aAgentName ?? "Agent Traffic Lab",
+            agentUrl: browserMcpProbe?.a2aAgentUrl ?? "https://agenttrafficlab.com/a2a",
+            protocolVersion: externalAgentCard?.protocolVersion ?? null,
+            agentCardStatus: externalAgentCard?.status ?? null,
+            agentCardName: externalAgentCard?.name ?? null,
+            agentCardVersion: externalAgentCard?.version ?? null,
+            paymentModel: externalAgentCard?.paymentModel ?? null,
+            agentCardVerified,
+            toolSchema: browserMcpProbe?.a2aToolSchema ?? null,
+            readbackTools: browserMcpProbe?.a2aTaskReadbackTools ?? [],
             httpStatus: browserMcpProbe?.a2aStatus ?? null,
+            taskId: browserMcpProbe?.a2aTaskId ?? null,
+            responseId: browserMcpProbe?.a2aResponseId ?? null,
             state: browserMcpProbe?.a2aState ?? "UNVERIFIED",
             contextId: browserMcpProbe?.a2aContextId ?? null,
-            completed: browserMcpProbe?.a2aCompleted === true,
+            completed: browserMcpProbe?.a2aCompleted === true && agentCardVerified,
+            substantive: browserMcpProbe?.a2aSubstantive === true,
+            identityPresent: browserMcpProbe?.a2aIdentityPresent === true,
+            responseLength: browserMcpProbe?.a2aText?.length ?? 0,
+            responseText: browserMcpProbe?.a2aText?.slice(0, 12000) ?? null,
             responseSha256: browserMcpProbe?.a2aText
               ? createHash("sha256").update(browserMcpProbe.a2aText).digest("hex")
               : null
@@ -669,11 +761,12 @@ jobs:
             console.log("RESUME_TASK_DIRECTIVES=" + JSON.stringify(resumeDirectives));
           }
           const executionFailed = (!primarySucceeded && !primaryPending)
-            || (primarySucceeded && additionalAgentPrompted && !secondarySucceeded && !secondaryPending);
+            || (primarySucceeded && additionalAgentPrompted && !secondarySucceeded && !secondaryPending)
+            || !crossPlatformA2A.completed;
           const output = {
             status: executionFailed ? "failed" : unresolvedNativeTask ? "partial" : "completed",
             requestId,
-            provider: "Agent Router MCP platform agents plus external A2A registry",
+            provider: "Agent Router MCP platform agents plus Agent Traffic Lab A2A",
             primaryExecutionName,
             primarySucceeded,
             secondarySucceeded,
@@ -697,7 +790,7 @@ jobs:
             runId: process.env.GITHUB_RUN_ID,
             commitSha: process.env.GITHUB_SHA,
             createdAt: new Date().toISOString(),
-            provider: "Agent Router MCP platform agents plus external A2A registry",
+            provider: "Agent Router MCP platform agents plus Agent Traffic Lab A2A",
             primaryExecutionName,
             primarySucceeded,
             secondarySucceeded,
@@ -711,6 +804,7 @@ jobs:
               state: item.state ?? null,
               waitedForTask: item.waitedForTask ?? false,
               responseLength: item.response?.length ?? 0,
+              responseText: item.response?.slice(0, 12000) ?? null,
               responseSha256: item.response
                 ? createHash("sha256").update(item.response).digest("hex")
                 : null
@@ -732,7 +826,8 @@ jobs:
             "- Primary agent: " + primaryExecutionName + " (" + (primarySucceeded ? "completed" : "not completed") + ")\n" +
             "- Independent secondary: " + (additionalAgentPrompted ? (secondaryResult()?.name ?? secondaryName ?? "unavailable") : "not selected by 36% cadence") + "\n" +
             "- Cross-platform A2A: " + (crossPlatformA2A.completed ? "completed" : "not verified") +
-              " | state=" + crossPlatformA2A.state + " | context=" + (crossPlatformA2A.contextId ?? "none") + "\n\n" +
+              " | state=" + crossPlatformA2A.state + " | task=" + (crossPlatformA2A.taskId ?? "sync/no task id") +
+              " | response=" + (crossPlatformA2A.responseId ?? "none") + " | context=" + (crossPlatformA2A.contextId ?? "none") + "\n\n" +
             results.map(item => "### " + item.name + "\n\n" +
               "- Status: " + (item.status ?? "failed") + "\n" +
               (item.taskId ? "- Native task ID: " + item.taskId + "\n" : "") +
@@ -743,14 +838,14 @@ jobs:
               : "")
           );
           if (executionFailed) {
-            throw new Error("No platform-native agent reached verified terminal completion: " +
-              JSON.stringify(results.map(item => ({
+            throw new Error("One or more required provider-native turns did not reach verified terminal completion: " +
+              JSON.stringify({ crossPlatformA2A, results: results.map(item => ({
                 name: item.name,
                 status: item.status,
                 taskId: item.taskId ?? null,
                 state: item.state ?? null,
                 error: item.error ?? null
-              }))));
+              })) }));
           }
           NODE
 
