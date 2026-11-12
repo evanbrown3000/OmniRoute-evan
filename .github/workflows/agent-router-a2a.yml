@@ -25,7 +25,7 @@ jobs:
     container:
       image: mcr.microsoft.com/playwright:v1.65.0-resolute
       options: --ipc=host
-    timeout-minutes: 25
+      timeout-minutes: 50
     steps:
       - name: Install matching Playwright package
         run: |
@@ -44,6 +44,17 @@ jobs:
           import fs from "node:fs";
 
           const harPath = `${process.env.RUNNER_TEMP}/agent-router.raw.har`;
+          const sanitizeUrl = value => {
+            try {
+              const url = new URL(value);
+              url.search = "";
+              url.hash = "";
+              url.pathname = url.pathname.split("/").map(segment =>
+                /^[a-f0-9-]{24,}$/i.test(segment) || /^[A-Za-z0-9_-]{40,}$/.test(segment) ? ":redacted" : segment
+              ).join("/");
+              return url.toString();
+            } catch { return "<redacted>"; }
+          };
           const browser = await chromium.launch({ headless: true });
           const context = await browser.newContext({
             recordHar: { path: harPath, mode: "minimal", content: "omit" }
@@ -163,17 +174,6 @@ jobs:
           }
 
           const har = JSON.parse(fs.readFileSync(harPath, "utf8"));
-          const sanitizeUrl = value => {
-            try {
-              const url = new URL(value);
-              url.search = "";
-              url.hash = "";
-              url.pathname = url.pathname.split("/").map(segment =>
-                /^[a-f0-9-]{24,}$/i.test(segment) || /^[A-Za-z0-9_-]{40,}$/.test(segment) ? ":redacted" : segment
-              ).join("/");
-              return url.toString();
-            } catch { return "<redacted>"; }
-          };
           const requests = har.log.entries
             .map(entry => ({
               method: entry.request.method,
@@ -264,6 +264,8 @@ jobs:
             throw new Error(`Unable to load the current agent task: HTTP ${taskResponse.status}`);
           }
           const currentTask = await taskResponse.text();
+          const requestIds = [...currentTask.matchAll(/Request ID:\s*([A-Za-z0-9._:-]+)/g)];
+          const requestId = requestIds.at(-1)?.[1] ?? `github-run-${process.env.GITHUB_RUN_ID}`;
 
           const prompt = [
             "You are an independent software-systems architect and researcher. Review the verified OmniRoute implementation inventory below and provide a source-backed recommendation.",
@@ -332,6 +334,7 @@ jobs:
             if (schema.type === "array") return schema.default ?? [];
             if (schema.type === "string") {
               if (taskId && /task.*id|id.*task/.test(name)) return taskId;
+              if (/request.*id|id.*request/.test(name)) return requestId;
               if ((/repo|repository|github|source/.test(name) && /url|uri|link/.test(name)) ||
                   ["repo", "repository", "source_url"].includes(name)) return repoUrl;
               if (/timeout|wait|seconds/.test(name)) return String(300);
@@ -349,6 +352,31 @@ jobs:
 
           const buildArgs = (spec, task = prompt, taskId = null) => {
             const schema = spec.inputSchema ?? {};
+
+          const readbackNames = [
+            "get_task", "get_task_result", "get_task_status", "read_task",
+            "read_task_result", "read_task_status", "task_status", "task_result",
+            "fetch_task", "fetch_task_result", "get_task_by_id", "get_task_details"
+          ];
+          const readbackSpecs = readbackNames.map(name => toolSpecs.find(tool => tool.name === name)).filter(Boolean);
+          const readbackSpec = readbackSpecs.find(tool => /result|read/i.test(tool.name)) ?? readbackSpecs[0] ?? null;
+          const buildTaskReadbackArgs = (spec, taskId) => {
+            const schema = resolveSchema(spec.inputSchema ?? {}, spec.inputSchema ?? {});
+            if (schema.type === "string") return taskId;
+            const properties = schema.properties ?? {};
+            const required = schema.required ?? Object.keys(properties);
+            const args = {};
+            for (const key of required) {
+              if (/task.*id|id.*task/.test(key) || key === "id") args[key] = taskId;
+              else if (properties[key]) args[key] = buildSchemaValue(properties[key], schema, key,
+                "Independently read back the provider-native task state and final result.", taskId);
+            }
+            if (!Object.keys(args).length) args.task_id = taskId;
+            return args;
+          };
+          console.log("TASK_READBACK_TOOL_SCHEMAS=" + JSON.stringify(readbackSpecs.map(tool => ({
+            name: tool.name, description: tool.description ?? null, inputSchema: tool.inputSchema
+          }))));
             return buildSchemaValue(schema, schema, "", task, taskId);
           };
 
@@ -392,35 +420,33 @@ jobs:
             let waitedForTask = false;
             const readState = value => String(
               value?.structuredContent?.task?.state ??
+              value?.structuredContent?.task?.status ??
               value?.structuredContent?.state ??
               value?.structuredContent?.status ??
-              value?.task?.state ??
-              value?.state ??
-              value?.status ??
-              ""
+              value?.task?.state ?? value?.task?.status ?? value?.state ?? value?.status ?? ""
             ).toUpperCase();
-            let state = readState(result) || responseText.match(/STATUS:\s*([A-Z_-]+)/i)?.[1]?.toUpperCase() || "";
-            const pending = value => /RUNNING|IN_PROGRESS|QUEUED|PENDING|WAITING|INPUT_REQUIRED|STILL RUNNING/.test(
-              readState(value) + " " + extractText(value).toUpperCase()
-            );
-            const terminalSuccess = value => /^(COMPLETED|SUCCESS|SUCCEEDED|DONE)$/.test(readState(value))
-              || /STATUS:\s*(COMPLETED|SUCCESS|SUCCEEDED|DONE)/i.test(extractText(value));
+            const normalizedState = value => readState(value).replace(/^TASK_STATE_/, "");
+            let state = normalizedState(result) || responseText.match(/STATUS:\s*([A-Z_-]+)/i)?.[1]?.toUpperCase() || "";
+            const pending = value => /^(SUBMITTED|WORKING|RUNNING|IN_PROGRESS|QUEUED|PENDING|WAITING|INPUT_REQUIRED|AUTH_REQUIRED)$/.test(normalizedState(value))
+              || /STILL RUNNING|TASK_STATE_(SUBMITTED|WORKING|INPUT_REQUIRED|AUTH_REQUIRED)/i.test(extractText(value).toUpperCase());
+            const terminalSuccess = value => /^(COMPLETED|SUCCESS|SUCCEEDED|DONE)$/.test(normalizedState(value))
+              || /STATUS:\s*(COMPLETED|SUCCESS|SUCCEEDED|DONE)|TASK_STATE_COMPLETED/i.test(extractText(value));
             const terminalFailure = value => Boolean(value?.isError)
-              || /^(FAILED|ERROR|CANCELLED|TIMED_OUT)$/.test(readState(value))
-              || /STATUS:\s*(FAILED|ERROR|CANCELLED|TIMED_OUT)/i.test(extractText(value));
+              || /^(FAILED|ERROR|CANCELLED|TIMED_OUT|REJECTED)$/.test(normalizedState(value))
+              || /STATUS:\s*(FAILED|ERROR|CANCELLED|TIMED_OUT|REJECTED)|TASK_STATE_FAILED/i.test(extractText(value));
             if (taskId && !terminalSuccess(result) && !terminalFailure(result)) {
               waitedForTask = true;
               // The workflow has a 25-minute ceiling. Keep one native task alive and
               // read it back for up to 16 minutes; never launch a duplicate fallback
               // merely because the first provider has not finished yet.
-              for (let poll = 0; poll < 8; poll++) {
+              for (let poll = 0; poll < 20; poll++) {
                 const waited = await rpc("tools/call", {
                   name: "wait_for_task",
                   arguments: { task_id: taskId, max_wait_seconds: 120 }
                 }, id + 100 + poll, 130000);
                 result = waited.parsed?.result ?? waited.parsed;
                 responseText = extractText(result);
-                state = readState(result) || responseText.match(/STATUS:\s*([A-Z_-]+)/i)?.[1]?.toUpperCase() || "";
+                state = normalizedState(result) || responseText.match(/STATUS:\s*([A-Z_-]+)/i)?.[1]?.toUpperCase() || "";
                 const success = terminalSuccess(result);
                 const failure = terminalFailure(result);
                 const stillRunning = pending(result);
@@ -428,17 +454,65 @@ jobs:
                   name, taskId, poll: poll + 1, state, terminalSuccess: success,
                   terminalFailure: failure, stillRunning, responseLength: responseText.length
                 }));
-                if (success || failure) break;
+                if (success || failure || /^(INPUT_REQUIRED|AUTH_REQUIRED)$/.test(normalizedState(result))) break;
               }
             }
             const explicitComplete = terminalSuccess(result);
             const failed = terminalFailure(result) || Boolean(initial.parsed?.isError || initial.parsed?.error);
             const isPending = !explicitComplete && !failed && pending(result);
+            let independentReadback = null;
+            if (taskId && explicitComplete && !failed) {
+              try {
+                let readbackMethod = readbackSpec?.name ?? "wait_for_task-repeat";
+                let readbackResult;
+                if (readbackSpec) {
+                  const readback = await rpc("tools/call", {
+                    name: readbackSpec.name, arguments: buildTaskReadbackArgs(readbackSpec, taskId)
+                  }, id + 200, 30000);
+                  readbackResult = readback.parsed?.result ?? readback.parsed;
+                } else {
+                  const readback = await rpc("tools/call", {
+                    name: "wait_for_task", arguments: { task_id: taskId, max_wait_seconds: 1 }
+                  }, id + 200, 15000);
+                  readbackResult = readback.parsed?.result ?? readback.parsed;
+                }
+                let readbackText = extractText(readbackResult);
+                let readbackState = normalizedState(readbackResult);
+                let readbackTaskId = readbackResult?.structuredContent?.task_id
+                  || readbackResult?.structuredContent?.taskId
+                  || readbackResult?.structuredContent?.task?.id
+                  || readbackResult?.task_id || readbackResult?.taskId || readbackResult?.task?.id
+                  || readbackText.match(/task[_ -]?id\s*[:=]\s*([A-Za-z0-9._:-]+)/i)?.[1] || null;
+                if (readbackSpec && readbackText.trim().length <= 80) {
+                  const repeat = await rpc("tools/call", {
+                    name: "wait_for_task", arguments: { task_id: taskId, max_wait_seconds: 1 }
+                  }, id + 201, 15000);
+                  const repeatResult = repeat.parsed?.result ?? repeat.parsed;
+                  const repeatText = extractText(repeatResult);
+                  if (terminalSuccess(repeatResult) && repeatText.trim().length > 80) {
+                    readbackResult = repeatResult;
+                    readbackText = repeatText;
+                    readbackState = normalizedState(repeatResult);
+                    readbackTaskId = readbackResult?.structuredContent?.task_id || readbackResult?.structuredContent?.taskId || readbackResult?.structuredContent?.task?.id || readbackResult?.task_id || readbackResult?.taskId || readbackResult?.task?.id || readbackTaskId;
+                    readbackMethod += "+wait_for_task-repeat";
+                  }
+                }
+                const taskMatches = !readbackTaskId || readbackTaskId === taskId;
+                independentReadback = {
+                  method: readbackMethod, taskId: readbackTaskId ?? taskId, state: readbackState || "unverified",
+                  verified: terminalSuccess(readbackResult) && taskMatches && readbackText.trim().length > 80,
+                  response: readbackText.slice(0, 12000)
+                };
+                if (independentReadback.verified) { responseText = readbackText; state = readbackState; result = readbackResult; }
+              } catch (readbackError) {
+                independentReadback = { method: readbackSpec?.name ?? "wait_for_task-repeat", taskId, state: "readback-error", verified: false, error: String(readbackError).slice(0, 1500) };
+              }
+            }
             // A task ID makes provider-native terminal state mandatory. A long text
             // response is sufficient only for a synchronous agent tool that returned
             // no task ID; text length must never substitute for async task completion.
             const directComplete = !taskId && responseText.trim().length > 200 && !isPending && !failed;
-            const isComplete = !failed && !isPending && (taskId ? explicitComplete : (explicitComplete || directComplete));
+            const isComplete = !failed && !isPending && (taskId ? explicitComplete && independentReadback?.verified === true : (explicitComplete || directComplete));
             return {
               name,
               status: isComplete ? "completed" : failed ? "failed" : "incomplete",
@@ -446,6 +520,7 @@ jobs:
               taskId: taskId ?? null,
               state: state || (isComplete ? "completed-response" : "unverified"),
               waitedForTask,
+              independentReadback,
               response: responseText
             };
           };
@@ -491,12 +566,19 @@ jobs:
           }
 
           const output = {
+            requestId,
             status: "completed",
             provider: "Agent Router MCP platform agents and external A2A registry",
             results,
             advertisedTools: toolNames,
             discovery
           };
+          const evidencePath = `${process.env.RUNNER_TEMP}/agent-router-native-turn.json`;
+          fs.writeFileSync(evidencePath, JSON.stringify({
+            ...output, runId: process.env.GITHUB_RUN_ID, commit: process.env.GITHUB_SHA,
+            browser: { pricingStatus, pricingUrl, pricingTitle, deepwikiPages, backendRequests: requests, browserMcpProbe }
+          }, null, 2));
+          console.log("NATIVE_AGENT_EVIDENCE_PATH=" + evidencePath);
           console.log("NATIVE_AGENT_RESULT=" + JSON.stringify(output));
           fs.appendFileSync(
             process.env.GITHUB_STEP_SUMMARY,
@@ -596,6 +678,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: agent-router-sanitized-har-${{ github.run_id }}
-          path: ${{ runner.temp }}/agent-router.har
+          path: |
+            ${{ runner.temp }}/agent-router.har
+            ${{ runner.temp }}/agent-router-native-turn.json
           if-no-files-found: ignore
           retention-days: 7
