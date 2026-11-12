@@ -90,3 +90,17 @@ Focus on the strongest proven historical composition: Pipeline as the durable wo
 Independently critique that composition. Identify the single highest-value production integration that increases actual completed cross-platform agent turns, not queued prompts or model-only inference. Compare AgentRouter/LocalMark, Kilo, OpenHands, Agno, LangGraph, Letta, Cloudflare Agents/Browser Run, and other materially stronger open-source/free-tier options using current primary evidence. Distinguish free inference from free agent execution, and free browser minutes from durable authenticated sessions. Recommend how new provider capabilities should be enrolled through the existing account, resource, lease, budget, and receipt owners without multiplying accounts to evade quotas.
 
 Return a concise evidence-backed review with source URLs, actual execution evidence if available, and one promotion recommendation. Do not create accounts, access credentials, bypass identity/billing/quota/rate limits, spend money, perform outreach, publish listings, transfer funds, modify application code, or run internal tests. Do not access or disclose private memory-corpus contents.
+
+## 2026-11-12 — ChatMode historical promotion and durable federation review
+
+Request ID: `gpt6-20261112-chatmode-promotion-03`
+
+This is the active objective for the next native agent turn; earlier sections are historical context, not separate tasks to duplicate.
+
+1. Independently compare the current B4PT0R ChatMode adapter with the archived historical ChatMode Blue implementation and its known-good release/transport evidence. Identify which exact capabilities are proven, which are missing in current source, and what should be promoted rather than rewritten. Do not disclose private deployment identifiers, conversation URLs, session material, or credentials to external agents.
+2. Trace the existing Work Episode `NativeTurnRuntime` / `TurnActions` path into the incumbent Pipeline recurring runner. Identify the exact missing binding or registration seam. Preserve Pipeline as the only durable recurrence/lease owner; do not add a competing scheduler or graph.
+3. Keep provider-native agent turns, model inference, browser sessions, and remote compute as distinct capability classes. A real native turn requires a provider-owned task/conversation identity, terminal state, and readback; discovery and HTTP success are insufficient.
+4. Review the existing OmniRoute Agent Router A2A workflow and the public GitHub implementations/protocols that materially improve the architecture. Prioritize durable execution, native agent sessions, browser/HAR capture, remote node qualification, legitimate free capacity, and recoverable identity custody.
+5. Return one architecture recommendation and a staged promotion/integration sequence with exact repository paths, owner boundaries, evidence requirements, and unresolved risks. Do not produce a generic plan instead of a source-backed answer.
+
+Constraints: no new account creation, password reuse, credential collection/disclosure, quota or billing circumvention, paid resource provisioning, outreach, revenue transfers, internal tests, or application-code changes. Do not access private memory-corpus contents. Use existing supported provider routes and respect their quotas. If an invocation fails, report the actual failure and only continue through a distinct supported route.
