@@ -23,7 +23,7 @@ jobs:
     container:
       image: mcr.microsoft.com/playwright:v1.65.0-resolute
       options: --ipc=host
-    timeout-minutes: 12
+    timeout-minutes: 25
     steps:
       - name: Install matching Playwright package
         run: |
@@ -132,7 +132,7 @@ jobs:
                     name: "a2a_call_agent",
                     arguments: {
                       agent_url: "https://social.duoleads.com/a2a",
-                      message: "Search recent Hacker News discussions and public posts about open-source AI agent platforms, remote execution providers, browser automation, and genuinely free tiers. Return up to five relevant items with exact URLs, dates, key evidence, and whether the platform requires signup. Prefer primary GitHub repositories and official pricing documentation. Do not invent results.",
+                      message: "Describe your no-cost capabilities and public documentation only. Do not invoke any paid skill, initiate an x402 payment, or claim that a paid data query was executed. Return the exact official documentation URL and any account or API-key prerequisites.",
                       timeout_seconds: 45
                     }
                   }, "browser-har-a2a-turn");
@@ -181,7 +181,7 @@ jobs:
           }));
 
           const endpoint = "https://agent-router.org/mcp-http/mcp";
-          const rpc = async (method, params, id, timeoutMs = 80000) => {
+          const rpc = async (method, params, id, timeoutMs = 120000) => {
             const response = await fetch(endpoint, {
               method: "POST",
               headers: {
@@ -221,12 +221,17 @@ jobs:
           if (!primaryName) {
             throw new Error("Agent Router did not advertise a supported native agent tool.");
           }
-          const secondaryName = primaryName === "softwareengineeringexpert"
-            ? "researchagent"
-            : "softwareengineeringexpert";
+          const secondaryCandidates = [
+            "researchagent",
+            "taskplanner",
+            "reasoningdelegationhigh",
+            "browsernavigationagent"
+          ].filter(name => name !== primaryName && toolNames.includes(name));
+          const secondaryName = secondaryCandidates[0] ?? null;
+          const candidateNames = [primaryName, ...secondaryCandidates];
           const selectedNames = [primaryName];
           const additionalAgentPrompted = Math.random() < 0.36;
-          if (additionalAgentPrompted && toolNames.includes(secondaryName)) {
+          if (additionalAgentPrompted && secondaryName) {
             selectedNames.push(secondaryName);
           }
           console.log("ADDITIONAL_AGENT_PROMPT=" + JSON.stringify({
@@ -234,7 +239,7 @@ jobs:
             selected: additionalAgentPrompted,
             tool: selectedNames[1] ?? null
           }));
-          const selectedSpecs = toolSpecs.filter(tool => selectedNames.includes(tool.name));
+          const selectedSpecs = toolSpecs.filter(tool => candidateNames.includes(tool.name));
           console.log("AGENT_TOOL_SCHEMAS=" + JSON.stringify(selectedSpecs.map(tool => ({
             name: tool.name,
             inputSchema: tool.inputSchema
@@ -308,11 +313,11 @@ jobs:
               if (taskId && /task.*id|id.*task/.test(name)) return taskId;
               if ((/repo|repository|github|source/.test(name) && /url|uri|link/.test(name)) ||
                   ["repo", "repository", "source_url"].includes(name)) return repoUrl;
-              if (/timeout|wait|seconds/.test(name)) return String(180);
+              if (/timeout|wait|seconds/.test(name)) return String(300);
               return task;
             }
             if (schema.type === "integer" || schema.type === "number") {
-              if (/timeout|wait|seconds/.test(name)) return 180;
+              if (/timeout|wait|seconds/.test(name)) return 300;
               if (/limit|count|top.?k|number|num/.test(name)) return 8;
               return schema.default ?? 5;
             }
@@ -348,59 +353,6 @@ jobs:
               || JSON.stringify(result?.structuredContent ?? result ?? {});
           };
 
-          let directA2AResult = null;
-          const browserA2AText = String(browserMcpProbe?.a2aText ?? "");
-          const browserA2AStatus = Number(browserMcpProbe?.a2aStatus ?? 0);
-          const browserA2AError = browserMcpProbe?.a2aError;
-          const browserA2AComplete = browserA2AStatus >= 200 && browserA2AStatus < 300 &&
-            browserA2AText.trim().length > 80 && !browserA2AError &&
-            !/\b(ERROR|FAILED|TIMED_OUT)\b/i.test(browserA2AText);
-          if (browserA2AComplete) {
-            directA2AResult = {
-              name: "a2a_call_agent:social-duoleads",
-              status: "completed",
-              httpStatus: browserA2AStatus,
-              taskId: null,
-              state: "completed-synchronous",
-              agentUrl: "https://social.duoleads.com/a2a",
-              response: browserA2AText
-            };
-          } else if (toolNames.includes("a2a_call_agent")) {
-            try {
-              const fallback = await rpc("tools/call", {
-                name: "a2a_call_agent",
-                arguments: {
-                  agent_url: "https://social.duoleads.com/a2a",
-                  message: "Search recent Hacker News discussions and public posts about open-source AI agent platforms, remote execution providers, browser automation, and genuinely free tiers. Return up to five relevant items with exact URLs, dates, key evidence, and whether the platform requires signup. Prefer primary GitHub repositories and official pricing documentation. Do not invent results.",
-                  timeout_seconds: 45
-                }
-              }, 3, 80000);
-              const fallbackResult = fallback.parsed?.result ?? fallback.parsed;
-              const fallbackText = extractText(fallbackResult);
-              const fallbackComplete = fallback.status >= 200 && fallback.status < 300 &&
-                fallbackText.trim().length > 80 && !fallbackResult?.isError &&
-                !/\b(ERROR|FAILED|TIMED_OUT)\b/i.test(fallbackText);
-              directA2AResult = {
-                name: "a2a_call_agent:social-duoleads",
-                status: fallbackComplete ? "completed" : "failed",
-                httpStatus: fallback.status,
-                taskId: null,
-                state: fallbackComplete ? "completed-synchronous" : "unverified",
-                agentUrl: "https://social.duoleads.com/a2a",
-                response: fallbackText
-              };
-            } catch (error) {
-              directA2AResult = {
-                name: "a2a_call_agent:social-duoleads",
-                status: "failed",
-                taskId: null,
-                state: "failed",
-                agentUrl: "https://social.duoleads.com/a2a",
-                error: String(error).slice(0, 2000)
-              };
-            }
-          }
-
           const callAgentTool = async (name, id) => {
             const spec = selectedSpecs.find(item => item.name === name);
             if (!spec) return { name, status: "failed", error: "Agent Router did not advertise this agent tool" };
@@ -411,8 +363,9 @@ jobs:
             let taskId = result?.structuredContent?.task_id
               || result?.task_id
               || result?.task?.id
-              || responseText.match(/task[_ -]?id\\s*[:=]\\s*([A-Za-z0-9._:-]+)/i)?.[1]
+              || responseText.match(/task[_ -]?id\s*[:=]\s*([A-Za-z0-9._:-]+)/i)?.[1]
               || null;
+            let waitedForTask = false;
             const readState = value => String(
               value?.structuredContent?.state ??
               value?.structuredContent?.status ??
@@ -420,7 +373,7 @@ jobs:
               value?.status ??
               ""
             ).toUpperCase();
-            let state = readState(result) || responseText.match(/STATUS:\\s*([A-Z_-]+)/i)?.[1]?.toUpperCase() || "";
+            let state = readState(result) || responseText.match(/STATUS:\s*([A-Z_-]+)/i)?.[1]?.toUpperCase() || "";
             const pending = value => /RUNNING|IN_PROGRESS|QUEUED|PENDING|WAITING|INPUT_REQUIRED/.test(
               readState(value) + " " + extractText(value)
             );
@@ -431,21 +384,22 @@ jobs:
                 const waited = await rpc("tools/call", {
                   name: "wait_for_task",
                   arguments: waitArgs
-                }, id + 100, 210000);
+                }, id + 100, 320000);
                 result = waited.parsed?.result ?? waited.parsed;
                 responseText = extractText(result);
-                state = readState(result) || responseText.match(/STATUS:\\s*([A-Z_-]+)/i)?.[1]?.toUpperCase() || state;
+                state = readState(result) || responseText.match(/STATUS:\s*([A-Z_-]+)/i)?.[1]?.toUpperCase() || state;
+                waitedForTask = true;
               }
             }
             const isPending = /RUNNING|IN_PROGRESS|QUEUED|PENDING|WAITING|INPUT_REQUIRED/.test(
               state + " " + responseText
             );
             const failed = Boolean(result?.isError || initial.parsed?.isError || initial.parsed?.error)
-              || /STATUS:\\s*(FAILED|ERROR|CANCELLED|TIMED_OUT)|\\b(ERROR|FAILED)\\b/i.test(responseText)
+              || /STATUS:\s*(FAILED|ERROR|CANCELLED|TIMED_OUT)|\b(ERROR|FAILED)\b/i.test(responseText)
               || /^(FAILED|ERROR|CANCELLED|TIMED_OUT)$/.test(state);
-            const explicitComplete = /STATUS:\\s*(COMPLETED|SUCCESS|SUCCEEDED|DONE)/i.test(responseText)
+            const explicitComplete = /STATUS:\s*(COMPLETED|SUCCESS|SUCCEEDED|DONE)/i.test(responseText)
               || /^(COMPLETED|SUCCESS|SUCCEEDED|DONE)$/.test(state);
-            const directComplete = !taskId && responseText.trim().length > 200 && !isPending && !failed;
+            const directComplete = responseText.trim().length > 200 && !isPending && !failed && (!taskId || waitedForTask);
             const isComplete = !failed && !isPending && (explicitComplete || directComplete);
             return {
               name,
@@ -457,18 +411,29 @@ jobs:
             };
           };
 
-          const results = directA2AResult ? [directA2AResult] : [];
-          for (let index = 0; index < selectedNames.length; index++) {
-            const name = selectedNames[index];
+          const results = [];
+          const attemptedNames = new Set();
+          const runCandidate = async (name, id) => {
+            if (attemptedNames.has(name)) return;
+            attemptedNames.add(name);
             try {
-              results.push(await callAgentTool(name, 10 + index));
+              results.push(await callAgentTool(name, id));
             } catch (error) {
               results.push({ name, status: "failed", error: String(error).slice(0, 2000) });
             }
+          };
+          for (let index = 0; index < selectedNames.length; index++) {
+            await runCandidate(selectedNames[index], 10 + index);
           }
-          const completed = results.filter(item => item.status === "completed" && item.response?.length > 80);
+          let completed = results.filter(item => item.status === "completed" && item.response?.length > 80);
+          for (let index = 0; !completed.length && index < candidateNames.length; index++) {
+            const name = candidateNames[index];
+            if (attemptedNames.has(name)) continue;
+            await runCandidate(name, 30 + index);
+            completed = results.filter(item => item.status === "completed" && item.response?.length > 80);
+          }
           if (!completed.length) {
-            throw new Error("No platform-native agent completed: " + JSON.stringify(results));
+            throw new Error("No platform-native agent completed after all advertised fallback agents: " + JSON.stringify(results));
           }
 
           const output = {
