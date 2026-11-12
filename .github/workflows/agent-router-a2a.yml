@@ -451,6 +451,13 @@ jobs:
           };
           for (let index = 0; index < selectedNames.length; index++) {
             await runCandidate(selectedNames[index], 10 + index);
+            const unresolved = results.filter(item => item.status === "incomplete" && item.taskId);
+            if (unresolved.length) {
+              console.log("ADDITIONAL_AGENT_SKIPPED_UNRESOLVED_NATIVE_TASK=" + JSON.stringify(
+                unresolved.map(item => ({ name: item.name, taskId: item.taskId, state: item.state }))
+              ));
+              break;
+            }
           }
           let completed = results.filter(item => item.status === "completed" && item.response?.length > 80);
           let unresolvedNativeTask = results.some(item => item.status === "incomplete" && item.taskId);
