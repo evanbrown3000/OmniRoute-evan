@@ -258,3 +258,21 @@ This is a fresh direct-owner execution for the current conversation. Use the exi
 7. No new accounts, password reuse, credential collection/disclosure, identity/quota/billing/rate-limit circumvention, paid provisioning, outreach, listings, revenue transfers, private-memory-corpus access, application-code changes, or internal tests. Use legitimate existing capacity and public sources only. Do not access or disclose private memory-corpus contents.
 
 Required evidence: GitHub workflow run ID/status; sanitized HAR artifact name/path and digest; observed backend requests; platform and native tool; native task ID and terminal status; independent readback; secondary-agent result if selected; exact failures; source URLs; and one promotion recommendation with exact repository paths.
+
+
+---
+
+## Direct-owner federated expansion turn — 2026-11-12 — gpt6-20261112-federated-expansion-11
+
+This assignment is the active direct-owner turn. Use the existing hosted execution paths and strengthen the long-term system rather than creating another scheduler or making throwaway accounts.
+
+1. Inspect the current OmniRoute branch and the strongest historical agent-router branches, especially `agent-router-a2a-20261112-01` and `agent-router-a2a-20261112-02`. Compare the actual code and evidence, not just commit dates. Promote the strongest proven durable task-resume/readback implementation while preserving current useful provider and HAR behavior.
+2. Actually trigger one native agent on a distinct platform through the existing Agent Router MCP/A2A workflow. Capture a fresh sanitized browser HAR, discover exact schemas, invoke a native agent, poll the same native task ID to terminal state, and independently read back its result. Do not treat queued/accepted work, discovery, HTTP 2xx, or model inference as completion.
+3. Preserve the primary native-agent turn on every workflow invocation. Keep the secondary-agent branch at 36%, but make selection reproducible from the durable request/Work Episode identity rather than unseeded randomness. If selected, execute and verify the second provider-native turn independently.
+4. Investigate why the independent Cloudflare and Vercel heads cannot produce native completion readback, and why the current Pipeline wake routes return HTTP 402. Identify the correct owner-level repair or best historical implementation; do not evade payment, rate limits, account verification, or quota controls.
+5. Research public GitHub projects and current official documentation for agent runtimes, A2A/MCP interop, browser execution, and recurring free compute. Distinguish actual native agent turns, inference, browser sessions, and remote compute. Separate recurring allowances from trials, promotional credits, and metered usage.
+6. Preserve ownership: Pipeline owns durable recurrence, leases and retries; Work Episode owns assignments, child turns and evidence; Networks owns provider/node placement and capacity; Accounts owns encrypted credential custody and revisions; ComputerUseX owns browser sessions and HAR; B4PT0R owns provider-native website sessions; LibreChat owns its qualified API agent runtime; OmniRoute owns model routing and provider adapters.
+7. Recommend one highest-value production integration and identify exact repository paths and the strongest historical implementation to promote. Do not create a second scheduler, graph, transcript store, or credential vault.
+8. Keep public repository and external-agent prompts free of passwords, API keys, session cookies, private account data, and private memory-corpus contents. Do not create accounts merely to multiply quotas or bypass provider limits. No paid provisioning, outreach, listings, revenue transfers, application-code changes, or internal tests in this turn.
+
+Required evidence: exact workflow run ID/status; sanitized HAR artifact and digest; observed methods, endpoints and statuses; provider/platform, native tool, task ID, terminal state and readback; secondary result if selected; exact route failures; public source URLs; and one concrete promotion recommendation.
