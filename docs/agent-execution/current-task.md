@@ -28,3 +28,8 @@ Recommend the strongest existing architecture to promote for durable cross-platf
 Resume the two provider-native tasks already triggered by the previous run. Do not create duplicate tasks.
 RESUME_TASK: softwareengineeringexpert=9db4818b-aee9-4198-8ce8-bae5c410ac4e
 RESUME_TASK: researchagent=32ea68cb-3c41-4c37-ad3f-cc84076d670f
+
+
+## Continuation attempt 2 — 2026-11-12
+
+Resume the exact pending SoftwareEngineeringExpert native task ID and independently read back the already-completed ResearchAgent task. Preserve both original task IDs. Do not dispatch replacements, create accounts, access secrets, or invoke paid skills.
