@@ -25,7 +25,7 @@ OmniRoute has two distinct but complementary skill systems:
 | Source of truth | `src/lib/skills/` + marketplace                               | `src/lib/agentSkills/` + `skills/` directory                                                |
 | Runtime mode    | Injected into outbound requests, executed on tool-call events | Static markdown catalog + REST/MCP/A2A discovery endpoints                                  |
 | Who uses it     | OmniRoute itself (combo routing, inbound LLM calls)           | External agents, MCP clients, A2A orchestrators                                             |
-| Count           | Variable (marketplace-driven)                                 | 45 catalog entries (23 API + 21 CLI + 1 config)                                               |
+| Count           | Variable (marketplace-driven)                                 | 45 catalog entries (23 API + 21 CLI + 1 config)                                             |
 | Format          | `SkillDefinition` with tool schema + handler                  | `SKILL.md` frontmatter + markdown body                                                      |
 | Discovery       | `/api/skills/*` REST + `omniroute_skills_*` MCP tools         | `/api/agent-skills/*` REST + `omniroute_agent_skills_*` MCP tools + A2A `list-capabilities` |
 
@@ -207,18 +207,18 @@ Schema lives in two migrations:
 
 All endpoints live under `src/app/api/skills/`. Management endpoints (`/api/skills`, `/api/skills/[id]`, `/api/skills/install`) require **management auth** via `requireManagementAuth()`. The marketplace/install flows use the lighter `isAuthenticated()` (session or API key).
 
-| Endpoint                          | Method | Purpose                                                                  |
+| Endpoint | Method | Purpose |
 | --------------------------------- | ------ | ------------------------------------------------------------------------ | --- | ------------------------ | -------- | ------------------ |
-| `/api/skills`                     | GET    | List registered skills. Supports `?q=`, `?mode=on                        | off | auto`, `?source=skillsmp | skillssh | local`, pagination |
-| `/api/skills/[id]`                | PUT    | Update `enabled` or `mode`                                               |
-| `/api/skills/[id]`                | DELETE | Unregister by id                                                         |
-| `/api/skills/install`             | POST   | Install a custom skill (handler code + schema)                           |
-| `/api/skills/marketplace`         | GET    | Search the SkillsMP catalog (returns popular defaults when `q` is empty) |
-| `/api/skills/marketplace/install` | POST   | Install a SkillsMP skill (requires active provider = `skillsmp`)         |
-| `/api/skills/skillssh`            | GET    | Search the skills.sh catalog (`?q=&limit=`, capped at 100)               |
-| `/api/skills/skillssh/install`    | POST   | Install a skills.sh skill (requires active provider = `skillssh`)        |
-| `/api/skills/executions`          | GET    | Paginated execution history (`?apiKeyId=`)                               |
-| `/api/skills/executions`          | POST   | Execute a registered skill ad-hoc                                        |
+| `/api/skills` | GET | List registered skills. Supports `?q=`, `?mode=on                        | off | auto`, `?source=skillsmp | skillssh | local`, pagination |
+| `/api/skills/[id]` | PUT | Update `enabled` or `mode` |
+| `/api/skills/[id]` | DELETE | Unregister by id |
+| `/api/skills/install` | POST | Install a custom skill (handler code + schema) |
+| `/api/skills/marketplace` | GET | Search the SkillsMP catalog (returns popular defaults when `q` is empty) |
+| `/api/skills/marketplace/install` | POST | Install a SkillsMP skill (requires active provider = `skillsmp`) |
+| `/api/skills/skillssh` | GET | Search the skills.sh catalog (`?q=&limit=`, capped at 100) |
+| `/api/skills/skillssh/install` | POST | Install a skills.sh skill (requires active provider = `skillssh`) |
+| `/api/skills/executions` | GET | Paginated execution history (`?apiKeyId=`) |
+| `/api/skills/executions` | POST | Execute a registered skill ad-hoc |
 
 The `POST /api/skills/executions` endpoint returns HTTP `503` with `{ error: "Skills execution is disabled..." }` when `settings.skillsEnabled === false` (`executor.ts:42-45`). Operators can flip the master switch from **Settings → AI**.
 
@@ -246,6 +246,30 @@ The `handlerCode` string is a **handler name lookup** — not executable code. T
 ---
 
 ## MCP Tools
+
+### Website-account onboarding tools
+
+The existing server-owned tool loop can expose `provider_http_request`, `web_fetch`,
+and `onboard_website_account` as registered skills. Enable compatible workers with
+non-streaming requests: streaming clients own their own tool execution, so registered
+server-owned skills are not injected into their streams.
+
+`provider_http_request` preserves explicitly supplied Authorization/Cookie headers for
+native website signup/login operations. It does not attach ambient credentials, follow
+redirects or retry mutations. The ordinary `http_request` builtin retains its existing
+credential-header filtering.
+
+`onboard_website_account` accepts `provider`, `account_alias`, `credential`, `model`,
+and optional `recovery_url`. It registers or refreshes authenticated Claude Web,
+Perplexity Web, DeepSeek Web, Kimi Web and Grok Web connections through the provider
+domain store. It does not itself create vendor accounts or claim a successful native
+turn. Concurrent requests for the same account alias resolve to one connection.
+The optional existing recurring worker under `scripts/ops/agent-fleet/` admits new
+connections independently and publishes their actual returned work through Slack MCP.
+
+Perplexity Web uses its existing executor-side tool emulation; native model capability
+metadata remains distinct from that emulation. Register the desired handlers through
+`POST /api/skills/install`, using the builtin name as `handlerCode`.
 
 Four MCP tools wrap the skills surface (`open-sse/mcp-server/tools/skillTools.ts`). They are auto-registered when the MCP server boots.
 

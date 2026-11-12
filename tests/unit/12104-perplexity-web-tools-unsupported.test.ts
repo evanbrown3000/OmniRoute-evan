@@ -21,22 +21,23 @@ function buildResolvedTarget(provider: string, model: string): ResolvedComboTarg
   };
 }
 
-test("PR #2: perplexity-web provider metadata declares tool-calling unsupported", () => {
+test("Perplexity preserves tool controls for its existing executor emulation", () => {
+  assert.ok(perplexity_webProvider.models.every((model) => model.toolCalling === false));
   assert.ok(
-    perplexity_webProvider.unsupportedParams?.includes("tools"),
-    "Expected 'tools' to be unsupported"
+    !perplexity_webProvider.unsupportedParams?.includes("tools"),
+    "tools must reach the emulation adapter"
   );
   assert.ok(
-    perplexity_webProvider.unsupportedParams?.includes("tool_choice"),
-    "Expected 'tool_choice' to be unsupported"
+    !perplexity_webProvider.unsupportedParams?.includes("tool_choice"),
+    "tool_choice must reach the emulation adapter"
   );
   assert.ok(
-    perplexity_webProvider.unsupportedParams?.includes("parallel_tool_calls"),
-    "Expected 'parallel_tool_calls' to be unsupported"
+    !perplexity_webProvider.unsupportedParams?.includes("parallel_tool_calls"),
+    "parallel_tool_calls must reach the emulation adapter"
   );
 });
 
-test("PR #2: direct chatCore request with tools returns 400 error guard", () => {
+test("direct requests can reach the existing emulated tool path", () => {
   const model = "pplx-sonar";
   const provider = "perplexity-web";
   const unsupported = getUnsupportedParams(provider, model);
@@ -48,11 +49,11 @@ test("PR #2: direct chatCore request with tools returns 400 error guard", () => 
     false,
     model
   );
-  assert.equal(checkTools.blocked, true);
-  assert.ok(checkTools.message?.includes("does not support tool calling"));
+  assert.equal(checkTools.blocked, false);
+  assert.equal(checkTools.message, undefined);
 });
 
-test("PR #2: combo/auto keeps perplexity-web eligible (emulated tool-calling), so unsupportedParams stripping is what protects the request", () => {
+test("combo routing retains emulated tools for the executor instead of silently discarding them", () => {
   // Real ResolvedComboTarget shape, as produced by the routing layer.
   const candidateTargets: ResolvedComboTarget[] = [
     buildResolvedTarget("openai", "gpt-4"),
@@ -88,14 +89,11 @@ test("PR #2: combo/auto keeps perplexity-web eligible (emulated tool-calling), s
   );
   assert.equal(filteredNoTools.length, 2);
 
-  // What actually protects a combo/auto request routed to perplexity-web is the
-  // registry's `unsupportedParams` this PR adds: checkToolCallingRequiredButUnsupported
-  // never blocks combo requests (isCombo: true always returns blocked: false — see
-  // toolCallingRequiredCheck.ts), so chatCore relies on stripUnsupportedParams to
-  // drop the live `tools` param before the translated body reaches the executor.
+  // The executor turns definitions into its existing tool contract and parses
+  // the returned calls. Dropping them here would silently disable that path.
   const unsupported = getUnsupportedParams("perplexity-web", "pplx-sonar");
   const translatedBody: Record<string, unknown> = { ...bodyWithTools };
   const { strippedParams } = stripUnsupportedParams(translatedBody, unsupported);
-  assert.ok(strippedParams.includes("tools"));
-  assert.equal(translatedBody.tools, undefined);
+  assert.ok(!strippedParams.includes("tools"));
+  assert.deepEqual(translatedBody.tools, bodyWithTools.tools);
 });

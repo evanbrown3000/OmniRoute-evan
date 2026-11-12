@@ -5,7 +5,6 @@ import {
 
 import { skillRegistry } from "./registry";
 import { SkillExecution, SkillStatus, SkillHandler } from "./types";
-import { builtinSkills } from "./builtins";
 import { getDbInstance } from "../db/core";
 import { getSettings } from "../db/settings";
 import { randomUUID } from "crypto";
@@ -327,6 +326,7 @@ class SkillExecutor {
 
     let handler = this.handlers.get(skill.handler);
     if (!handler) {
+      const { builtinSkills } = await import("./builtins");
       const builtin = builtinSkills[skill.handler];
       if (builtin) {
         this.handlers.set(skill.handler, builtin);

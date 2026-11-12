@@ -4,6 +4,7 @@ import { executeWebFetch } from "./webFetchExecution";
 import { resolveDataDir } from "@/lib/dataPaths";
 import { safeOutboundFetch } from "@/shared/network/safeOutboundFetch";
 import { sandboxRunner, type SandboxConfig } from "./sandbox";
+import { onboardWebsiteAccount } from "./onboardWebsiteAccount";
 import { createHash } from "crypto";
 import fs from "fs/promises";
 import path from "path";
@@ -91,13 +92,19 @@ function normalizePositiveInteger(value: unknown, fallback: number, max: number)
   return Math.min(parsed, max);
 }
 
-function sanitizeHeaders(headers: unknown) {
+function sanitizeHeaders(headers: unknown, forwardCredentialHeaders = false) {
   if (!headers || typeof headers !== "object" || Array.isArray(headers)) return undefined;
 
   const sanitized: Record<string, string> = {};
   for (const [key, value] of Object.entries(headers as Record<string, unknown>)) {
     const normalizedKey = key.trim();
-    if (!normalizedKey || BLOCKED_REQUEST_HEADERS.has(normalizedKey.toLowerCase())) continue;
+    const credentialHeader = ["authorization", "cookie"].includes(normalizedKey.toLowerCase());
+    if (
+      !normalizedKey ||
+      (BLOCKED_REQUEST_HEADERS.has(normalizedKey.toLowerCase()) &&
+        !(forwardCredentialHeaders && credentialHeader))
+    )
+      continue;
     if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
       sanitized[normalizedKey] = String(value);
     }
@@ -263,6 +270,7 @@ export const builtinSkills: Record<string, SkillHandler> = {
       body,
       timeoutMs,
       maxBytes,
+      forwardCredentialHeaders = false,
     } = input as {
       url: string;
       method?: string;
@@ -270,6 +278,7 @@ export const builtinSkills: Record<string, SkillHandler> = {
       body?: unknown;
       timeoutMs?: number;
       maxBytes?: number;
+      forwardCredentialHeaders?: boolean;
     };
     if (!url || typeof url !== "string") {
       throw new Error("Missing required field: url");
@@ -280,7 +289,7 @@ export const builtinSkills: Record<string, SkillHandler> = {
       throw new Error(`Unsupported HTTP method: ${method}`);
     }
 
-    const headers = sanitizeHeaders(rawHeaders);
+    const headers = sanitizeHeaders(rawHeaders, forwardCredentialHeaders === true);
     const response = await safeOutboundFetch(url, {
       method: normalizedMethod,
       headers,
@@ -316,6 +325,9 @@ export const builtinSkills: Record<string, SkillHandler> = {
       context: context.apiKeyId,
     };
   },
+
+  provider_http_request: async (input, context) =>
+    builtinSkills.http_request({ ...input, forwardCredentialHeaders: true }, context),
 
   web_search: async (input, context) => {
     const {
@@ -475,6 +487,8 @@ export const builtinSkills: Record<string, SkillHandler> = {
       context: context.apiKeyId,
     };
   },
+
+  onboard_website_account: onboardWebsiteAccount,
 
   execute_command: async (input, context) => {
     const {

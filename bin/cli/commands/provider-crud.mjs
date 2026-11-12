@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import { apiFetch, statusToExitCode } from "../api.mjs";
 import { createPrompt, printError, printInfo, printSuccess } from "../io.mjs";
 import { runOAuthStart } from "./oauth.mjs";
+import { extractWebProviderConnectionsFromHar } from "../provider-har.mjs";
+import { watchHarDirectory } from "../har-watch.mjs";
 
 const ENV_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
@@ -328,9 +330,16 @@ export async function runProviderAddCommand(provider, opts = {}) {
 }
 
 export async function runProviderImportCommand(file, opts = {}) {
+  if (opts.watch) {
+    if (!opts.har) throw new Error("--watch requires --har");
+    return watchHarDirectory(file, (path) =>
+      runProviderImportCommand(path, { ...opts, watch: false })
+    );
+  }
   let parsed;
   try {
     parsed = JSON.parse(readFileSync(file, "utf8"));
+    if (opts.har) parsed = extractWebProviderConnectionsFromHar(parsed, opts.account || "owner");
   } catch (error) {
     printError(
       `Cannot read provider import file: ${error instanceof Error ? error.message : String(error)}`
@@ -343,10 +352,12 @@ export async function runProviderImportCommand(file, opts = {}) {
       ? parsed.providers
       : [parsed];
   if (!entries.length) {
+    if (opts.har) return 0;
     printError("Provider import file contains no entries.");
     return 2;
   }
   const existingByProviderAndName = new Map();
+  const existingHarOwnerByProvider = new Map();
   if (!opts.dryRun) {
     try {
       const response = await listRemoteConnections(opts);
@@ -356,6 +367,16 @@ export async function runProviderImportCommand(file, opts = {}) {
       }
       const body = await response.json().catch(() => ({}));
       const connections = Array.isArray(body?.connections) ? body.connections : [];
+      if (opts.har && (opts.account || "owner") === "owner") {
+        for (const provider of new Set(connections.map((row) => row.provider))) {
+          const active = connections.filter(
+            (row) => row.provider === provider && row.isActive !== false
+          );
+          if (active.length === 1 && !active[0].providerSpecificData?.onboardingAccountAlias) {
+            existingHarOwnerByProvider.set(provider, active[0]);
+          }
+        }
+      }
       for (const connection of connections) {
         const key = `${String(connection?.provider || "").toLowerCase()}\0${String(
           connection?.name || connection?.provider || ""
@@ -379,8 +400,26 @@ export async function runProviderImportCommand(file, opts = {}) {
     const provider = String(entry.provider).trim();
     const name = String(entry.name || provider).trim();
     const identityKey = `${provider.toLowerCase()}\0${name.toLowerCase()}`;
-    const existing = existingByProviderAndName.get(identityKey);
+    const existing =
+      existingByProviderAndName.get(identityKey) || existingHarOwnerByProvider.get(provider);
     if (existing) {
+      if (opts.har) {
+        const code = await runProviderEditCommand(existing.id, {
+          ...opts,
+          credential: entry.apiKey,
+          defaultModel: entry.defaultModel,
+        });
+        results.push({
+          provider,
+          name,
+          ok: code === 0,
+          code,
+          status: code === 0 ? "refreshed_existing" : "error",
+          connectionId: existing.id,
+        });
+        if (code !== 0 && !opts.continueOnError) break;
+        continue;
+      }
       const result = {
         provider,
         name,
@@ -584,6 +623,9 @@ export function registerProviderCrud(providers) {
   providers
     .command("import <file>")
     .description("Import provider connections from a JSON file")
+    .option("--har", "Extract authenticated website sessions from a private HAR capture")
+    .option("--account <alias>", "Stable account alias for HAR imports", "owner")
+    .option("--watch", "Watch a directory of HAR captures and import new or refreshed sessions")
     .option("--continue-on-error", "Continue importing after a failed entry")
     .option("--dry-run", "Preview requests without writing")
     .option("--json", "Print machine-readable output")

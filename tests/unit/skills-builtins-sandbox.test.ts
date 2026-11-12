@@ -192,6 +192,29 @@ test("builtin skill handlers validate required fields and perform real sandboxed
       assert.equal(httpResult.headers["content-type"], "text/plain");
       assert.deepEqual(pinnedTo, ["93.184.216.34"]);
 
+      globalThis.fetch = async (_url, init) => {
+        assert.equal(init.headers.Authorization, "Bearer explicit-provider-session");
+        assert.equal(init.headers.Cookie, "session=explicit-cookie");
+        assert.equal(init.headers.Host, undefined);
+        return new Response("authenticated", { status: 200 });
+      };
+      const authenticated = await runWithDirectFetchContext(() =>
+        builtinSkills.provider_http_request(
+          {
+            url: "https://example.com/api",
+            method: "POST",
+            headers: {
+              Authorization: "Bearer explicit-provider-session",
+              Cookie: "session=explicit-cookie",
+              Host: "override.invalid",
+            },
+            body: { ok: true },
+          },
+          context
+        )
+      );
+      assert.equal(authenticated.success, true);
+
       await assert.rejects(
         () => builtinSkills.http_request({ url: "http://127.0.0.1:9000" }, context),
         /Blocked private or local provider URL/

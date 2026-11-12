@@ -28,6 +28,7 @@ import { Buffer } from "node:buffer";
 
 import { connectObscuraBrowser } from "./obscura.ts";
 import { ensureVirtualDisplay, stopVirtualDisplay } from "./virtualDisplay.ts";
+import { automationPageBudget } from "./browserPageBudget.ts";
 
 type Browser = import("playwright").Browser;
 type BrowserContext = import("playwright").BrowserContext;
@@ -482,12 +483,14 @@ async function createWarmupPage(
   if (!warmupUrl) return null;
   let page: Page | null = null;
   try {
-    page = await context.newPage();
+    page = await automationPageBudget.open(() => context.newPage());
     await page.goto(warmupUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
     // Give the warmup a moment for upstream status/auth/country requests. The
     // first chat request otherwise pays this cost on the hot path.
     await new Promise((resolve) => setTimeout(resolve, 1500));
-    return page;
+    // Warmup state lives in cookies/storage; no reason to retain a second tab.
+    await page.close();
+    return null;
   } catch {
     await page?.close().catch(() => {});
     return null;
@@ -571,7 +574,7 @@ export async function acquireBrowserContext(
 }
 
 export async function openPage(pooled: PooledContext): Promise<Page> {
-  return pooled.context.newPage();
+  return automationPageBudget.open(() => pooled.context.newPage());
 }
 
 export async function releaseBrowserContext(key: string): Promise<void> {
@@ -650,6 +653,7 @@ export function getBrowserPoolStatus(): {
   engine: PoolEngine | null;
   stealthAvailable: boolean;
   lastActivityAgoMs: number;
+  pageLeases: ReturnType<typeof automationPageBudget.status>;
 } {
   return {
     enabled: isPoolEnabled(),
@@ -658,6 +662,7 @@ export function getBrowserPoolStatus(): {
     engine: state.engine,
     stealthAvailable: state.engine === "obscura" || state.cloakLaunch !== null,
     lastActivityAgoMs: state.lastActivity === 0 ? -1 : Date.now() - state.lastActivity,
+    pageLeases: automationPageBudget.status(),
   };
 }
 
