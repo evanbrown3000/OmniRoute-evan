@@ -138,3 +138,21 @@ This is a fresh turn. Do not treat prior completed tasks or acknowledgements as 
 8. Do not create accounts, collect or disclose credentials, reuse passwords, bypass identity verification, rate limits, quotas, or billing controls, provision paid resources, contact people, publish listings, transfer funds, access private memory-corpus contents, modify application code, or run internal tests. Keep all secrets and private metadata outside the public repository and external-agent prompts.
 
 Required final evidence: provider/platform; native tool name; native task ID (if returned); terminal state; independent readback; concise agent findings; browser HAR artifact and digest; observed backend methods/URLs/statuses; source-backed long-term recommendation; exact failures for any attempted but unsuccessful route.
+
+
+---
+
+## New direct-owner execution turn — 2026-11-12 — gpt6-20261112-omniroute-federation-06
+
+This is a fresh native-agent turn. Prior task receipts and acknowledgements do not satisfy it.
+
+1. Execute the existing GitHub-hosted Playwright workflow `.github/workflows/agent-router-a2a.yml` by this task-file update. Do not use the owner's personal computer or attempt another Vercel Sandbox creation while the Vercel team reports resource_creation_blocked.
+2. Capture a fresh sanitized HAR for Agent Router pricing, DeepWiki, and the Agent Router MCP endpoint. Record actual methods, URLs, status codes, advertised tool names, and input schemas. Never retain cookies, authorization headers, tokens, or private payloads.
+3. Actually invoke one free, provider-native agent on a distinct platform through the existing Agent Router/A2A route. If a native task ID is returned, poll that exact task until terminal completion or failure and independently read back its result. Do not duplicate unresolved work.
+4. Preserve the workflow's 36% secondary-agent cadence; if selected, execute the second agent and record its independent provider-native evidence.
+5. Review the strongest current and historical OmniRoute implementations and public GitHub alternatives. Recommend the strongest proven implementation to promote, not a rewrite. Focus on durable cross-platform native turns, remote execution, browser sessions, provider-native task continuation, terminal readback, and recurring capacity.
+6. Preserve one durable work authority: Pipeline owns recurrence/leases/cursors; Work Episode owns assignment and per-turn evidence; Networks owns physical provider/node admission and placement; Accounts owns credential custody; ComputerUseX owns browser/HAR; B4PT0R owns provider-hosted website session transport; OmniRoute owns inference and A2A/MCP routing; Secretary selects qualified providers without becoming a scheduler.
+7. Research public GitHub repositories and current official free-tier documentation for OpenHands, Kilo, LangGraph, Agno, Letta, Graphiti, Cloudflare Browser Run/Agents, Browserbase, Browserless, Daytona, E2B, Modal, Blaxel, Vercel Sandboxes, and materially stronger alternatives. Distinguish native agent execution from inference, browser sessions, and remote compute; report recurring free capacity only when supported by primary evidence.
+8. Prioritize qualifying and connecting existing legitimate free-tier resources before proposing additional accounts. Do not create accounts, reuse passwords, collect/disclose credentials, bypass identity verification, quotas, rate limits, billing controls, or provider fair-use limits. Do not provision paid resources, perform outreach, publish listings, transfer funds, access private memory-corpus contents, modify application code, or run internal tests.
+
+Required evidence: GitHub workflow run ID/status; browser HAR artifact path and digest; observed backend requests; provider/platform and native tool name; native task ID and terminal state; independent readback; second-agent result if selected; exact failures; source-backed long-term promotion recommendation.
