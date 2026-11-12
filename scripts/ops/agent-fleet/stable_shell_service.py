@@ -1,6 +1,7 @@
 """Supervise only the dedicated shell connector or its named tunnel."""
 import argparse
 import fcntl
+import json
 import os
 from pathlib import Path
 import signal
@@ -41,8 +42,20 @@ def main():
                 sys.path.insert(0, '/opt/adapter')
                 sys.path.insert(0, '/state/shell-app-deps')
                 sys.path.insert(0, '/state/shell-app-code')
-                from remote_execution.shell_app import main as serve
-                serve()
+                import uvicorn
+                from networks.integrations.accounts.controller_service import ControllerAccountsRuntime
+                from remote_execution.shell_app import ShellAuthorization, create_app
+                from remote_execution.shell_exec import accounts_shell
+                runtime = ControllerAccountsRuntime(json.loads(Path('/state/accounts.json').read_text()))
+                try:
+                    shell = accounts_shell(runtime, os.environ['COGNILODE_EXECUTOR_REF'], ROOT)
+                    shell.backend(shell.default)
+                    authorization = ShellAuthorization(ROOT, os.environ['SHELL_APP_ORIGIN'])
+                    server = create_app(shell, authorization, port=int(os.environ['SHELL_APP_PORT']))
+                    uvicorn.run(server.streamable_http_app(), host='0.0.0.0',
+                                port=int(os.environ['SHELL_APP_PORT']), access_log=False)
+                finally:
+                    runtime.close()
             else:
                 child = subprocess.Popen([
                     '/state/modified-codex/cloudflared-shell-app', 'tunnel',
