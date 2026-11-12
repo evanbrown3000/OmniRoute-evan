@@ -24,3 +24,7 @@ Recommend the strongest existing architecture to promote for durable cross-platf
 - Do not modify source code or run internal test suites for this review.
 - Do not access, quote, or disclose private repository contents. Preserve the existing separation between private memory content and the public OmniRoute codebase.
 - Keep the result focused on the long-term system design and real operational evidence.
+
+Resume the two provider-native tasks already triggered by the previous run. Do not create duplicate tasks.
+RESUME_TASK: softwareengineeringexpert=9db4818b-aee9-4198-8ce8-bae5c410ac4e
+RESUME_TASK: researchagent=32ea68cb-3c41-4c37-ad3f-cc84076d670f
