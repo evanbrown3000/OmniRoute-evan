@@ -1,42 +1,36 @@
 # Current agent-execution objective
 
-Treat OmniRoute as the existing foundation, not a greenfield rewrite. Review the current source and its strongest historical implementations, then recommend the single best long-term architecture for a provider-independent agent-execution fabric.
+Treat OmniRoute as the existing foundation. Do not rebuild the gateway, add a competing scheduler, or assume the newest branch is strongest. Compare the current and strongest historical implementations; promote only the best proven path while preserving useful fork-specific capabilities.
 
-The architecture must distinguish three different things:
+## Execution contract
 
-1. A model inference request that returns a completion.
-2. A native agent turn that actually runs on another platform and reaches a provider-native terminal state.
-3. A browser-backed provider workflow with a real browser session, captured HAR, and verified backend endpoints.
+Keep three outcomes distinct:
 
-Prioritize durable native agent invocation, provider-native task IDs and completion readback, browser session persistence, provider health and quota-aware failover, and one canonical graph linking providers, agent turns, browser sessions, HAR captures, and deployment evidence.
+1. **Inference completion:** a model API returns generated text.
+2. **Native agent turn:** a different platform actually executes an agent task and exposes provider-native task identity and terminal completion/readback.
+3. **Browser-backed provider workflow:** a real browser session is used, its HAR is captured, and the provider's backend endpoints and request/response behavior are verified.
 
-Inspect the existing A2A/MCP server, AgentBridge, CloudAgent/ACP integrations, provider-node endpoints, VNC login sessions, browser pool, provider registry, and historical branches. Promote the strongest proven implementation rather than layering a competing framework or starting over.
+A queue acknowledgement, accepted request, HTTP 2xx, model completion, tool discovery, or browser page load is not proof of a native agent turn. If an asynchronous provider returns a task ID, wait on that same task until a terminal state. Do not launch duplicate fallback work while the original task remains pending. If a route fails terminally, try a distinct supported provider and report the exact result.
 
-Research current public GitHub repositories and agent platforms, including OpenHands, Kilo Code, LangGraph, browser-use, and relevant alternatives. Compare genuinely free tiers, signup requirements, native agent capabilities, remote execution, and browser automation. Use official pricing and technical documentation, DeepWiki, and primary GitHub sources.
+## Current fork/upstream state
 
-Actually invoke at least one independent agent on a different platform and wait for its provider-native completion/readback. A queued prompt, accepted request, HTTP acknowledgement, or model completion alone is not a completed agent turn. If an agent route fails, try a distinct supported route and report the exact result. The existing workflow's 36% additional-agent cadence should remain active.
+The current `release/v3.8.54` fork was compared against `cheaper-inference/OmniRoute:release/v3.8.54`. The fork is **17 commits ahead and 21 commits behind**, with merge base `b71881de3ebb104e3e4962a603df712ffa397eb7`. Earlier divergence counts in this task are stale.
 
-Do not fabricate provider executions, account creation, quotas, sources, or completion states. Do not bypass identity verification, billing controls, provider quotas, or rate limits. Do not store credentials in the repository. Keep this task and all resulting public material free of private memory-corpus contents.
+Review upstream-only changes as candidates, not as automatically authoritative. Highest-impact areas include:
 
-## Current-turn focus
+- Streaming correctness: #19557 (bounded pending SSE lines and truthful stream summaries), #19205 (separate Responses payloads from metadata buffers), #19503 (executor fixes), and #19545 (direct-path cut-stream cooldown handling).
+- Provider semantics and request fidelity: #19035 (Anthropic correlation IDs), #19181 (Bedrock cache points/reasoning effort), #19485 (Codex app-server usage-limit mapping), #19337 (model-import endpoint/capability provenance and vision), #19134 (independent image quota), and #19541 (tool/embedding/search handling).
+- Resilience and quota boundaries: #18733 (avoid global 503s on low-stall cgroup reclaim), #19215 (terminated transport errors), and #19165 (caller API-key scope during image fallback).
+- Usage and pricing correctness: #19296 (roll up usage before retention), #19501 (aggregate long-context pricing), #19570 (model pricing/alias), and #19463 (usage fixes).
 
-For this run, review the existing cross-platform execution route and strengthen the evidence-backed long-term design. Start with the provider's real browser surface: capture the HAR for Agent Router pricing, DeepWiki, and the MCP endpoint; record actual request methods, URLs, status codes, and tool schemas without retaining secrets or unnecessary private payloads. Then invoke a discovered agent on a distinct platform through its native tool. If it returns a task identifier, wait on that same task until a terminal state; do not launch a duplicate fallback while it remains pending. If the route fails terminally, try a different supported provider. Read back the completed response and retain the HAR artifact.
+Inspect actual patches and their interaction with the fork's custom A2A/agent-execution workflows. Preserve the fork's useful 17 commits. Do not merge or edit gateway source code in this review run.
 
-Research current public GitHub agent runtimes and official free-tier documentation, prioritizing A2A, MCP, OpenHands, Browser Use, LangGraph, Agno, Letta, AI Horde, Kilo, Cloudflare Browser Run, Browserbase, Browserless, Daytona, E2B, Modal, and Blaxel. Compare agent execution, remote compute, browser sessions, free capacity, account prerequisites, and native completion evidence. Prefer existing production-capable implementations and one canonical graph authority; promote the strongest verified historical implementation rather than starting over or layering a competing scheduler.
+## This run: provider-first native agent review
 
-Keep private memory data isolated. Do not create accounts, store credentials, bypass provider identity checks or quotas, use paid skills, publish commercial listings, or transfer funds. Distinguish completed native agent turns from inference completions, browser sessions, and queued acknowledgements.
+Use the existing `.github/workflows/agent-router-a2a.yml` route. Start with its real browser surface and capture the HAR for Agent Router pricing, DeepWiki, and the MCP endpoint. Record observed request methods, URLs, status codes, discovered agent-tool names, and input schemas. Do not retain cookies, tokens, authorization headers, or private payloads.
 
+Use the Agent Router MCP endpoint to list tools, discover agents, and actually invoke at least one native agent on a distinct platform. If a task ID is returned, poll that same task until provider-native terminal completion and read back its response. Preserve the workflow's 36% additional-agent cadence. Retain the HAR artifact and distinguish every completed turn from discovery, acknowledgement, inference, or pending work.
 
-## Fresh run focus — 2026-11-12
+Review current public GitHub projects and official free-tier documentation for OpenHands, Kilo, LangGraph, Agno, Graphiti, Letta, Browser Use, Cloudflare Browser Run, Browserbase, Browserless, Daytona, E2B, Modal, Blaxel, AI Horde, n8n, and Dify. Compare native agent execution, durable remote work, browser sessions, actual free capacity, account prerequisites, and completion evidence. Prefer proven free/self-hosted routes where they fit; do not assume a free tier without current primary evidence.
 
-Independently review the actual agent-execution path in this repository, focusing on `.github/workflows/agent-router-a2a.yml` and the distinct surfaces documented in `docs/frameworks/A2A-SERVER.md`, `docs/frameworks/CLOUD_AGENT.md`, `docs/frameworks/AGENT_PROTOCOLS_GUIDE.md`, and `docs/guides/HEADLESS.md`. Verify which surface can create a genuine native agent turn, which only routes model completions, and how task IDs, provider-native terminal state, and result readback are evidenced. Compare the strongest existing CloudAgent, AgentBridge, A2A, and ACP paths with current public agent runtimes and official free-tier documentation. Recommend one durable execution contract that preserves current ownership boundaries and avoids a second scheduler. The workflow must dispatch at least one independent platform agent, wait for terminal completion/readback, and capture the browser HAR; if it cannot, report the exact failure rather than treating discovery or HTTP acknowledgement as completion. Do not modify repository code or claim actions that did not occur.
-
-## Branch reconciliation and this execution
-
-The current fork branch is intentionally distinct from upstream. A GitHub comparison against `cheaper-inference/OmniRoute:release/v3.8.54` shows 19 fork-only commits and 6 upstream-only commits. The fork-only changes are concentrated in the two agent-execution workflows and this task document; the upstream-only changes include current fixes to SSE completion/stream buffering, tool-call argument normalization, embedding response encoding, borrowed-key search cooldown scope, and direct-path stream termination.
-
-Review the six upstream-only commits as candidate capability improvements, not as automatically authoritative merely because they are newer. Determine whether they strengthen the provider-native task lifecycle, stream completion fidelity, tool-call handling, and fallback isolation required by this objective. Recommend whether to promote them into this fork, identify any interaction with the two custom workflows, and preserve the strongest existing implementation. Do not merge or edit source code in this review run.
-
-For the native agent turn, include the fork/upstream divergence and the relevant upstream commit references in the research prompt. Actually dispatch through the existing Agent Router MCP/A2A route, wait on the same native task ID until a terminal state, and read back its response. Do not treat the browser probe, HTTP acknowledgement, model inference, or queued task as an agent completion. Capture and retain the real browser HAR and report the observed request methods, URLs, status codes, discovered tool names/schemas, external platform, native task ID, and terminal result. Do not retain cookies, tokens, authorization headers, or private payloads.
-
-Use current primary GitHub sources for OpenHands, Kilo, LangGraph, Agno, Graphiti, Browser Use, and relevant browser/compute providers. Compare actual free capacity and account prerequisites without creating accounts or bypassing provider limits. Keep the current three-way distinction between inference, native agent turns, and browser-backed provider workflows. Do not access private memory-corpus contents or place private material in this public repository.
+Keep private memory-corpus contents out of this public repository and out of external-agent prompts. Do not create accounts, store credentials, bypass identity verification, billing controls, quotas, or rate limits, or claim any execution that did not occur. Do not run internal tests. Return one evidence-backed long-term architecture recommendation, the strongest existing implementation to promote, the exact provider execution result, and the verified browser/HAR findings.
