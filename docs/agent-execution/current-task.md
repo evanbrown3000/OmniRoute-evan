@@ -1,71 +1,63 @@
 # Active agent-execution assignment
 
-**Request ID:** `gpt6-20261112-omniroute-federation-13`
+**Request ID:** `gpt6-20261112-omniroute-federation-16`
 **Date:** 2026-11-12
-**Mode:** read-only architecture review plus one real remote native-agent execution.
+**Mode:** top-down architecture review plus one fresh provider-native cross-platform execution.
 
-This is the only active assignment in this file. Historical task prompts and evidence are preserved in `docs/agent-execution/history/2026-11-12-pre-federation-07.md`; do not replay them.
+This is the only active assignment. The previous assignment is archived at `docs/agent-execution/history/2026-11-12-federation-13.md`; do not reuse its native task IDs.
 
 ## Objective
 
-Strengthen the existing heterogeneous Cognilode/OmniRoute federation by promoting the strongest proven historical implementation and connecting it to the existing owners. Do not start over or create another scheduler, account vault, graph, registry, or transcript store.
+Advance the existing Cognilode / OmniRoute federation toward a self-replenishing, heterogeneous, remotely executed agent network. Promote the strongest proven historical implementation rather than rebuilding or layering competing control planes.
 
-Preserve these boundaries:
+Preserve the ownership model:
 - Pipeline: sole durable work, recurrence, lease, retry, and stage-transition authority.
-- Work Episode: durable logical assignment, child-agent handoffs, idempotency, and end-to-end evidence.
-- Networks: provider/resource capacity, independent quota and failure domains, placement, and admission.
-- Accounts: provider identities, encrypted credential custody, revisioned sessions, and recovery.
-- ComputerUseX: browser interaction, provider login, HAR/backend evidence, and session lifecycle.
-- B4PT0R: provider-native website-session transport where the existing native API/LibreChat route does not already provide it.
-- LibreChat: its qualified native agent runtime.
-- OmniRoute: model/inference gateway, provider adapters, and A2A/MCP transport.
-- Secretary: selection and routing among qualified capabilities, not a second scheduler.
+- WorkEpisode: durable logical task/turn identity, parent/child handoffs, idempotency, and evidence.
+- Networks: provider/node capacity, independent failure domains, placement, admission, and quota-aware resource accounting.
+- Accounts: provider identities, encrypted credential custody, credential revisions, and recovery.
+- ComputerUseX: browser sessions, provider login, HAR/backend capture, and session lifecycle.
+- B4PT0R: provider-native website-session transport where a better native agent API is not available.
+- LibreChat: qualified native agent runtime.
+- OmniRoute: inference/provider routing and A2A/MCP transport.
+- Secretary: capability-aware peer selection, never a second scheduler.
 
 ## Required execution
 
-1. Use this repository's GitHub-hosted Playwright workflow and its Agent Router MCP endpoint. Do not use the owner's personal computer.
-2. Capture the browser HAR for Agent Router pricing, DeepWiki, and MCP discovery/invocation. Retain sanitized evidence only: strip all headers, cookies, query values, request/response bodies, and token-like fields. Preserve method, host/path, HTTP status, timestamps, timing, JSON-RPC method/tool name, and safe provider task IDs in a separate index/receipt.
-3. Discover the live MCP tool schemas. Actually invoke at least one substantive native agent on the external Agent Router platform. If it returns a task ID, poll that exact ID until provider-native terminal completion and independently read back the result.
-4. Use a stable request-ID-based 36% secondary-agent selection. If selected, actually invoke the second agent and independently record its result. Do not spawn duplicate fallback work while any native task is unresolved.
-5. If a task remains pending at the workflow deadline, emit an exact `RESUME_TASK: tool_name = native_task_id` directive and preserve it in the run receipt. A later run must resume the same native task, not create a replacement.
-6. If the native agent's own tools expose a no-charge external A2A agent on another provider platform, actually invoke a substantive successor and read it back. Otherwise state precisely which capability is absent. Do not treat Slack posts, queued prompts, inference-only answers, HTTP 2xx, or tool discovery as native completion.
+1. Use the existing GitHub-hosted Playwright workflow on this branch. Never use the owner's personal computer.
+2. Capture a fresh HAR for Agent Router pricing, DeepWiki public documentation, and MCP discovery/invocation. Retain sanitized HAR and a separate index/receipt. Remove headers, cookies, query values, tokens, request/response bodies, and private metadata. Record methods, sanitized host/path, statuses, timestamps, durations, JSON-RPC methods/tool names, and safe native task IDs.
+3. Discover live tool schemas. Prompt at least one fresh native agent on the Agent Router platform. A new task ID is required; do not reuse the completed task from run 62 or any earlier task. Poll the exact returned ID to a provider-native terminal state and independently read back the response.
+4. Preserve the deterministic request-ID-based 36% secondary-agent selection. If selected, actually execute the second agent as a distinct task, poll its exact ID, and record its independent terminal result. Do not duplicate unresolved tasks.
+5. Ask the native agent to identify a relevant no-charge A2A successor on a genuinely different provider platform. If one is exposed, invoke it and read back the result. Do not call paid x402 skills. If no relevant no-charge successor is exposed, report that exact capability gap rather than substituting a paid or unrelated service.
+6. Research public GitHub implementations and current official documentation for A2A, OpenHands, Kilo, LangGraph, Agno, Letta, Graphiti, Cloudflare Agents/Browser Run, Browserbase, Browserless, Daytona, E2B, Modal, Blaxel, Vercel Sandboxes, and materially stronger alternatives. Distinguish native agent execution, inference, browser sessions, and remote compute. Separate recurring free capacity from one-time credits and metered use. Cite primary sources and exact repo paths.
+7. Compare the strongest historical branches `agent-router-a2a-20261112-01`, `-02`, `-03`, and `-05` with `release/v3.8.54`. Evaluate same-ID resume, terminal verification, no-duplicate fallback, deterministic peer selection, HAR sanitization, and durable WorkEpisode receipts. Recommend one proven composition to promote.
+8. Identify the smallest integration seam that binds a completed provider-native turn to its WorkEpisode, provider/account revision, qualified remote node and egress, browser session/HAR (when used), native task identity, terminal state, response digest, and independent readback. Do not create a second scheduler, graph, registry, transcript store, or vault.
+9. Evaluate provider onboarding as a capacity decision: prioritize existing legitimate free capacity and accountless routes; identify additive free accounts only where the provider's own rules allow them and the capacity is genuinely independent. Do not multiply identities to evade quotas, verification, or billing. Do not put passwords, tokens, or decryption keys in Git.
+10. Keep revenue activity separate from infrastructure qualification. Do not contact people, publish listings, buy paid services, or transfer funds in this review.
 
-## Architecture and historical promotion
+## Known route evidence to improve upon
 
-Compare the current `release/v3.8.54` workflow with historical branches `agent-router-a2a-20261112-01` and `-02`. Focus on durable `RESUME_TASK` continuation, exact same-ID polling, terminal-state verification, deterministic 36% peer selection, no-duplicate fallback, HAR sanitization, and durable Work Episode receipts. Promote the strongest proven composition while preserving the useful current-branch behavior.
+The preceding workflow run was `43248788189` (branch `agent-router-a2a-20261112-05`, run 62), which completed its GitHub Actions job and retained a sanitized HAR. The primary `softwareengineeringexpert` call failed with HTTP 502. The deterministic secondary `reasoningdelegationhigh` call returned native task `9170db87-ca47-4825-a704-d68fe0c56807`, terminal `COMPLETED`, but its response was generic and did not satisfy the architecture objective. Treat it as closed historical evidence, not as the current task's result.
 
-Inspect the existing A2A task route, CloudAgent adapters, MCP registry, provider web-session contract, CUX historical `native_product.py`/session-custody implementation, B4PT0R, Pipeline, Networks, Accounts, and Work Episode. Identify exact source paths and the smallest owner-to-owner integration seam that yields a verifiable provider-native turn receipt bound to the correct account revision, remote node/egress, browser session/HAR, native task identity, terminal state, and independent readback.
-
-Research current public GitHub projects and official provider documentation for Google A2A, OpenHands, Kilo, LangGraph, Agno, Letta, Cloudflare Agents/Browser Run, Browserbase/Browserless, Daytona, E2B, Modal, Blaxel, and stronger alternatives. Distinguish native agent execution, model inference, browser capability, and remote compute. Separate recurring free capacity from one-time credits and metered usage; only claim allowances supported by current primary sources.
+The prior run's DeepWiki requests returned HTTP 429. Agent Router pricing returned HTTP 200 and advertised free anonymous MCP access. The previous artifact retained only the HAR despite the workflow declaring separate index/trace/receipt paths; verify all four artifacts independently this time and report missing files honestly.
 
 ## Constraints
 
-- Public repository content and public official documentation only.
-- No new account creation, duplicate identities, password reuse, credential collection/disclosure, quota/rate-limit/identity/billing circumvention, or paid provisioning.
-- No access to private agent-memory contents; no secrets or private metadata in prompts, logs, HAR, artifacts, or Git.
-- No outreach, listings, revenue-transfer actions, application-code changes, or internal tests.
-- Do not restart existing services or use the personal laptop.
-- Report exact failures and last observable state; never claim completion without provider-native terminal evidence and independent readback.
+- Public repository and public official documentation only.
+- Do not access private memory-corpus contents.
+- Do not collect, disclose, or commit credentials; do not reuse passwords.
+- No quota, rate-limit, identity, or billing circumvention; no paid provisioning.
+- No outreach, listings, revenue transfers, application-code changes, or internal tests.
+- Do not restart services or use the owner's personal computer.
+- A queue acknowledgement, HTTP 2xx, discovery response, inference-only completion, generic response, or successful workflow job is not proof of a successful architecture-review task.
+- Report exact provider/tool/task IDs, terminal states, response digests, readback evidence, artifact paths/digests, and failures. Never claim a task completed without provider-native terminal evidence.
 
 ## Required deliverables
 
-- GitHub workflow run ID/status and job result.
-- Sanitized HAR artifact name/path and SHA-256 digest.
-- HAR index showing observed backend methods, sanitized URLs, statuses, MCP methods/tool names, and timing.
-- Native provider/platform, tool name, task ID, terminal status, timestamps, response digest, and independent readback.
-- Secondary-agent evidence if selected; otherwise deterministic selection result.
-- Any pending-task `RESUME_TASK` directive.
-- Source-backed comparison and one long-term promotion recommendation with exact paths, owner boundaries, integration seam, and unresolved blockers.
-
-## Fresh native-agent dispatch — 2026-11-12
-
-The completed task `b5aa7a60-ec6c-440e-b750-b861f1ad3ec2` was independently read back in runs 60 and 61 and is closed. Its generic response did not satisfy the architecture-review objective. This assignment requires a genuinely new provider-native task ID; do not resume or reuse the closed task.
-
-Invoke the SoftwareEngineeringExpert primary agent for a source-backed review of the exact A2A task manager, CloudAgent adapter, provider-node, VNC/browser-session, and MCP integration paths. Preserve the deterministic 36% secondary-agent selection; if selected, dispatch and read back the peer as a separate provider-native task. If the primary fails terminally, record the exact error and continue to the next supported agent only after the original task is terminal. Never launch a duplicate while a task remains unresolved.
-
-The earlier Social Media Data API A2A exchange was only a paid-service catalog. Do not call any paid x402 skill. Invoke a distinct external A2A successor only if the registry explicitly identifies the selected skill as no-charge and its capability is relevant to the architecture review; otherwise report that no suitable no-charge successor was exposed.
-
-
-## Owner-triggered workflow invocation — 2026-11-12
-
-This documentation-only commit is the single trigger for the existing GitHub-hosted Playwright/A2A workflow for request `gpt6-20261112-omniroute-federation-13`. Preserve that request identity for reproducible 36% secondary-agent selection. Run the workflow once, capture sanitized browser/MCP evidence, dispatch the SoftwareEngineeringExpert primary agent, dispatch the selected secondary only if the deterministic sample selects it, and independently read back every provider-native task. Do not create duplicate tasks while any task is unresolved. This is not authorization to create accounts, use new credentials, incur paid charges, bypass provider limits, modify application code, or access private memory.
+- GitHub Actions run ID, run/job status, and step results.
+- Sanitized HAR artifact name, exact path, SHA-256 digest, plus HAR index/MCP trace/native receipt presence and digests.
+- Observed backend methods, sanitized URLs, HTTP statuses, MCP methods, tool names, schemas, and timings.
+- Fresh native provider/platform, tool name, task ID, terminal state, timestamps, response digest, and independent readback.
+- Secondary-agent result if the deterministic 36% selection chooses it.
+- Relevant distinct-platform no-charge successor result, or precise absence.
+- Public GitHub/official-doc research with exact source URLs, free-capacity classification, and a single long-term promotion recommendation.
+- Exact owner-to-owner integration seam and unresolved blockers.
