@@ -8,10 +8,15 @@ on:
       - agent-router-a2a-20261112-02
     paths:
       - ".github/workflows/agent-router-a2a.yml"
+      - "docs/agent-execution/current-task.md"
 
 permissions:
   actions: write
   contents: read
+
+concurrency:
+  group: agent-router-a2a-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   agent-review:
