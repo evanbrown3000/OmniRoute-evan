@@ -1,3 +1,33 @@
+# Authoritative current turn — 2026-11-13 — gpt6-20261113-omniroute-federation-01
+
+Request ID: `gpt6-20261113-omniroute-federation-01`
+
+This is the active execution objective for this turn. Earlier sections are retained as historical context, not as duplicate tasks.
+
+## Mission
+Perform an independent, source-backed architecture review and advance the existing OmniRoute/Cognilode federation toward reliable, recurring, provider-native agent-to-agent execution and remote browser capacity. Do not start over, clone competing control planes, or assume the newest implementation is strongest.
+
+## Required live execution
+1. Use the existing GitHub Actions Playwright workflow to capture a sanitized HAR of Agent Router pricing, DeepWiki, and the Agent Router MCP endpoint. Extract observed HTTP methods, endpoint paths, status codes, advertised tool names, and input schemas. Exclude cookies, authorization headers, tokens, and private prompt/response bodies.
+2. Actually invoke a distinct external agent through the Agent Router MCP/A2A route. If it returns a provider-native task ID, poll that exact ID until provider-declared terminal state and independently read back the result. Do not count discovery, accepted/queued, HTTP 2xx, or model inference alone as a completed native turn.
+3. The workflow must also perform its existing cross-platform A2A call to a separate registered agent, using only its no-cost/public capability. Do not call any paid skill or initiate any x402/USDC payment.
+4. Preserve the 36% additional-peer cadence. If selected, actually invoke the additional agent and independently verify its terminal result; never launch duplicate fallback work while an earlier native task is unresolved.
+
+## Architecture review
+- Compare `release/v3.8.54` with historical branches `agent-router-a2a-20261112-03`, `-04`, `-05`, and `-06`. Inspect exact commits and workflow diffs, not branch names alone.
+- Evaluate same-ID resume, provider-native terminal-state precedence, duplicate suppression, independent readback, sanitized HAR, MCP trace, deterministic 36% selection, and durable WorkEpisode receipts.
+- Identify the strongest historically proven implementation and recommend the minimum promotion path that preserves useful fork-specific capabilities. Explain any systemic defect found in terminal-state parsing and specify a protocol-level correction rather than a one-off workaround.
+- Keep the existing ownership boundaries: Pipeline owns recurring scheduling/leases/retries/effect readback; WorkEpisode owns durable per-turn and peer assignments; Networks owns provider/resource admission and routing; Accounts owns encrypted credential custody; ComputerUseX owns browser sessions/HAR; B4PT0R owns provider-native execution where appropriate; LibreChat is a qualified native agent runtime; OmniRoute remains the inference/provider gateway, not a second global scheduler.
+- Compare public GitHub projects and current official free-tier documentation for Agent Router/A2A, OpenHands, Agno, LangGraph, Letta, Google ADK/A2A, Cloudflare Browser Run, Browserbase, Browserless, Daytona, E2B, Modal, and Vercel Sandboxes. Distinguish recurring free capacity from one-time credits, free control planes from free inference, and hosted browser minutes from self-hosted compute.
+
+## Constraints
+Do not create accounts, reuse passwords, collect or disclose credentials, store secrets in Git, access private memory corpora, bypass identity verification/billing/quotas/rate limits, purchase resources, send outreach, publish listings, or transfer funds. Do not run internal tests or modify gateway/application source code. Keep all external-agent prompts limited to public repository and public documentation context.
+
+## Deliverables
+Return the actual browser/HAR and A2A evidence, provider/tool/task ID/terminal state/readback, 36% selection outcome, exact historical branch/commit recommendation, source URLs for the free-tier comparison, and the single highest-value long-term integration seam.
+
+---
+
 # Current agent-execution objective
 
 Treat OmniRoute as the existing foundation. Do not rebuild the gateway, add a competing scheduler, or assume the newest branch is strongest. Compare the current and strongest historical implementations; promote only the best proven path while preserving useful fork-specific capabilities.
