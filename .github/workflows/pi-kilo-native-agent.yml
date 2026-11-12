@@ -1,0 +1,163 @@
+name: Pi plus Kilo native peer agent
+
+on:
+  push:
+    branches: [release/v3.8.54]
+    paths:
+      - "agent-requests/*.json"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pi-kilo-peer-${{ github.ref }}-${{ github.event.head_commit.id }}
+  cancel-in-progress: false
+
+jobs:
+  invoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Resolve one peer request
+        id: request
+        env:
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          python - <<'PY'
+          import json, os, pathlib, subprocess
+          sha = os.environ["EVENT_SHA"]
+          paths = subprocess.check_output(
+              ["git", "diff-tree", "--no-commit-id", "--name-only", "-r", sha],
+              text=True,
+          ).splitlines()
+          candidates = [p for p in paths if p.startswith("agent-requests/") and p.endswith(".json")]
+          if len(candidates) != 1:
+              raise SystemExit(f"expected exactly one request; found {len(candidates)}")
+          path = pathlib.Path(candidates[0])
+          data = json.loads(path.read_text(encoding="utf-8"))
+          required = {"request_id", "parent_workflow_run_id", "parent_native_task_id", "prompt"}
+          if set(data) != required:
+              raise SystemExit("request schema mismatch")
+          if data["request_id"] != path.stem or not isinstance(data["prompt"], str) or not data["prompt"].strip():
+              raise SystemExit("request identity or prompt invalid")
+          if len(data["prompt"]) > 12000:
+              raise SystemExit("prompt exceeds the public-run bound")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+              out.write(f"path={path.as_posix()}\n")
+              out.write(f"request_id={data['request_id']}\n")
+          PY
+
+      - name: Prepare read-only baseline and candidate snapshots
+        env:
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin release/v3.8.54 agent-router-a2a-20261112-06
+          mkdir -p "$RUNNER_TEMP/pi-kilo/review/baseline" "$RUNNER_TEMP/pi-kilo/review/candidate"
+          git archive origin/release/v3.8.54 | tar -x -C "$RUNNER_TEMP/pi-kilo/review/baseline"
+          git archive origin/agent-router-a2a-20261112-06 | tar -x -C "$RUNNER_TEMP/pi-kilo/review/candidate"
+          git diff --stat origin/release/v3.8.54...origin/agent-router-a2a-20261112-06 > "$RUNNER_TEMP/pi-kilo/review/diff-stat.txt"
+          git diff --name-status origin/release/v3.8.54...origin/agent-router-a2a-20261112-06 > "$RUNNER_TEMP/pi-kilo/review/diff-names.txt"
+          git diff --no-ext-diff origin/release/v3.8.54...origin/agent-router-a2a-20261112-06 > "$RUNNER_TEMP/pi-kilo/review/diff.patch"
+          printf 'Baseline: release/v3.8.54\nCandidate: agent-router-a2a-20261112-06\n' > "$RUNNER_TEMP/pi-kilo/review/branches.txt"
+          printf 'Parent workflow run: 43248788189\nParent native task: 9170db87-ca47-4825-a704-d68fe0c56807\n' >> "$RUNNER_TEMP/pi-kilo/review/branches.txt"
+
+      - name: Install Pi agent runtime and Kilo provider
+        run: |
+          set -euo pipefail
+          npm install --global @mariozechner/pi-coding-agent
+          pi install git:mrexodia/kilo-pi-provider
+          pi --help > "$RUNNER_TEMP/pi-kilo/pi-help.txt"
+          pi --version > "$RUNNER_TEMP/pi-kilo/pi-version.txt"
+
+      - name: Run one read-only Pi agent turn through Kilo free model
+        env:
+          REQUEST_PATH: ${{ steps.request.outputs.path }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RUNNER_TEMP: ${{ runner.temp }}
+        run: |
+          set -uo pipefail
+          python - <<'PY'
+          import json, os, pathlib
+          request = json.loads(pathlib.Path(os.environ["REQUEST_PATH"]).read_text(encoding="utf-8"))
+          root = pathlib.Path(os.environ["RUNNER_TEMP"]) / "pi-kilo"
+          prompt = request["prompt"] + "\n\nRead-only source snapshots are available at:\n- " + str(root / "review" / "baseline") + "\n- " + str(root / "review" / "candidate") + "\n- " + str(root / "review" / "diff.patch") + "\n\nUse the read, grep, find and ls tools only. Do not modify files."
+          (root / "prompt.txt").write_text(prompt, encoding="utf-8")
+          PY
+          set +e
+          pi --print --model "kilo/minimax/minimax-m2.1:free" --tools "read,grep,find,ls" "$(cat "$RUNNER_TEMP/pi-kilo/prompt.txt")" > "$RUNNER_TEMP/pi-kilo/result.md" 2> "$RUNNER_TEMP/pi-kilo/pi.stderr"
+          code=$?
+          set -e
+          printf '%s\n' "$code" > "$RUNNER_TEMP/pi-kilo/exit-code.txt"
+          python - <<'PY'
+          import hashlib, json, os, pathlib, re
+          root = pathlib.Path(os.environ["RUNNER_TEMP"]) / "pi-kilo"
+          request = json.loads(pathlib.Path(os.environ["REQUEST_PATH"]).read_text(encoding="utf-8"))
+          result = (root / "result.md").read_text(encoding="utf-8", errors="replace")
+          stderr = (root / "pi.stderr").read_text(encoding="utf-8", errors="replace")
+          exit_code = int((root / "exit-code.txt").read_text().strip())
+          sessions_root = pathlib.Path.home() / ".pi" / "agent" / "sessions"
+          session_files = sorted(sessions_root.rglob("*.jsonl"), key=lambda p: p.stat().st_mtime) if sessions_root.exists() else []
+          latest = session_files[-1] if session_files else None
+          session_id = None
+          session_sha256 = None
+          if latest:
+              raw = latest.read_bytes()
+              session_sha256 = hashlib.sha256(raw).hexdigest()
+              for line in raw.decode("utf-8", "replace").splitlines():
+                  try:
+                      obj = json.loads(line)
+                  except Exception:
+                      continue
+                  if obj.get("type") == "session":
+                      session_id = obj.get("id")
+                      break
+              (root / "pi-session.jsonl").write_bytes(raw)
+          refs = sorted(set(re.findall(r"(?:review/)?(?:baseline|candidate)/[A-Za-z0-9_./-]+", result)))
+          receipt = {
+              "schema": "cognilode.pi-kilo.native-agent-turn.v1",
+              "request_id": request["request_id"],
+              "parent_workflow_run_id": request["parent_workflow_run_id"],
+              "parent_native_task_id": request["parent_native_task_id"],
+              "workflow_run_id": os.environ["RUN_ID"],
+              "workflow_run_url": os.environ["RUN_URL"],
+              "agent_runtime": "pi-coding-agent",
+              "provider": "kilo",
+              "model": "minimax/minimax-m2.1:free",
+              "provider_quota": "Kilo shared free-model allocation",
+              "pi_session_id": session_id,
+              "pi_session_sha256": session_sha256,
+              "pi_session_file_count": len(session_files),
+              "exit_code": exit_code,
+              "result_bytes": len(result.encode("utf-8")),
+              "result_sha256": hashlib.sha256(result.encode("utf-8")).hexdigest(),
+              "source_reference_count": len(refs),
+              "source_references": refs[:40],
+              "provider_error_excerpt": stderr[-2000:] if stderr else None,
+              "automatic_retry": False,
+              "status": "native_agent_turn_completed" if exit_code == 0 and len(result.strip()) >= 1000 else "native_agent_turn_incomplete",
+          }
+          (root / "receipt.json").write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write("## Pi + Kilo peer agent receipt\n\n")
+              summary.write(f"- Status: {receipt['status']}\n")
+              summary.write(f"- Runtime: {receipt['agent_runtime']}\n")
+              summary.write(f"- Provider/model: {receipt['provider']} / {receipt['model']}\n")
+              summary.write(f"- Pi session: {session_id or 'not exposed'}\n")
+              summary.write(f"- Parent native task: {request['parent_native_task_id']}\n")
+              summary.write(f"- Source references: {len(refs)}\n")
+          if receipt["status"] != "native_agent_turn_completed":
+              raise SystemExit("Pi agent did not produce a verified terminal result")
+          PY
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pi-kilo-peer-${{ github.run_id }}
+          path: ${{ runner.temp }}/pi-kilo/
+          retention-days: 30
