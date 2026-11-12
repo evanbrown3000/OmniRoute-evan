@@ -50,6 +50,22 @@ def verification_from_message(raw, *, sender_domain, recipient, code_length):
     return next(iter(codes)) if len(codes) == 1 else None
 
 
+def verification_mailboxes(client):
+    """Include Gmail's special-use All/Junk folders, without scanning custom labels."""
+    folders = ["INBOX"]
+    status, listing = client.list()
+    if status == "OK":
+        for row in listing or []:
+            if not row or not re.search(rb"\\(?:All|Junk)\b", row):
+                continue
+            match = re.search(rb'\)\s+(?:"[^"]*"|NIL)\s+(.+)$', row)
+            if match:
+                name = match.group(1).decode("ascii")
+                if name not in folders:
+                    folders.append(name)
+    return folders[:3]
+
+
 def run(context, operation, arguments):
     if operation not in ("inventory", "qualify", "verification_code"):
         raise ValueError("Unsupported mailbox verification operation")
@@ -84,28 +100,34 @@ def run(context, operation, arguments):
         if operation == "qualify":
             return {"status": "authenticated", "protocol": "IMAP4_SSL", "message_reads": 0}
         since = datetime.fromtimestamp(after, timezone.utc).strftime("%d-%b-%Y")
-        status, values = client.uid("search", None, '(SINCE "%s" FROM "%s")' % (since, domain))
-        if status != "OK":
-            raise RuntimeError("Verification sender search failed")
-        for uid in reversed((values[0].split() if values and values[0] else [])[-10:]):
-            status, parts = client.uid("fetch", uid, "(INTERNALDATE BODY.PEEK[]<0.65536>)")
+        folders = verification_mailboxes(client)
+        for folder in folders:
+            status, _ = client.select(folder, readonly=True)
             if status != "OK":
                 continue
-            for part in parts:
-                if not isinstance(part, tuple):
+            status, values = client.uid("search", None, '(SINCE "%s" FROM "%s")' % (since, domain))
+            if status != "OK":
+                raise RuntimeError("Verification sender search failed")
+            for uid in reversed((values[0].split() if values and values[0] else [])[-10:]):
+                status, parts = client.uid("fetch", uid, "(INTERNALDATE BODY.PEEK[]<0.65536>)")
+                if status != "OK":
                     continue
-                match = re.search(rb'INTERNALDATE "([^"]+)"', part[0])
-                if not match:
-                    continue
-                received = datetime.strptime(match.group(1).decode("ascii"), "%d-%b-%Y %H:%M:%S %z").timestamp()
-                if received < after or received > time.time() + 30:
-                    continue
-                code = verification_from_message(part[1], sender_domain=domain,
-                                                 recipient=address, code_length=digits)
-                if code:
-                    return {"status": "ready", "code": code, "message_uid": uid.decode("ascii"),
-                            "received_at": received, "sender_domain": domain}
-        return {"status": "pending", "sender_domain": domain, "mailbox_mutated": False}
+                for part in parts:
+                    if not isinstance(part, tuple):
+                        continue
+                    match = re.search(rb'INTERNALDATE "([^"]+)"', part[0])
+                    if not match:
+                        continue
+                    received = datetime.strptime(match.group(1).decode("ascii"), "%d-%b-%Y %H:%M:%S %z").timestamp()
+                    if received < after or received > time.time() + 30:
+                        continue
+                    code = verification_from_message(part[1], sender_domain=domain,
+                                                     recipient=address, code_length=digits)
+                    if code:
+                        return {"status": "ready", "code": code, "message_uid": uid.decode("ascii"),
+                                "received_at": received, "sender_domain": domain, "mailbox": folder}
+        return {"status": "pending", "sender_domain": domain, "mailbox_mutated": False,
+                "folders_checked": len(folders)}
     finally:
         if client:
             try:

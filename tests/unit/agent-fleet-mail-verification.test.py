@@ -56,6 +56,7 @@ class MailVerificationTests(unittest.TestCase):
         received = mail.datetime.fromtimestamp(now, mail.timezone.utc).strftime("%d-%b-%Y %H:%M:%S %z")
         class Client:
             def __init__(self): self.calls = []
+            def list(self): return "OK", []
             def login(self, *args): self.calls.append(("login",))
             def select(self, folder, readonly=False):
                 self.calls.append(("select", folder, readonly)); return "OK", []
@@ -72,6 +73,14 @@ class MailVerificationTests(unittest.TestCase):
         self.assertIn(("fetch", b"1", "(INTERNALDATE BODY.PEEK[]<0.65536>)"), client.calls)
         self.assertEqual(client.calls[-1], ("logout",))
         self.assertNotIn("fixture-private-password", str(result))
+
+    def test_discovers_only_special_use_folders_including_localized_junk(self):
+        client = SimpleNamespace(list=lambda: ("OK", [
+            b'(\\All) "/" "[Gmail]/All Mail"',
+            b'(\\Junk) "/" "[Gmail]/Localized-Junk"',
+            b'(\\HasNoChildren) "/" "Unrelated private label"']))
+        self.assertEqual(mail.verification_mailboxes(client),
+                         ["INBOX", '"[Gmail]/All Mail"', '"[Gmail]/Localized-Junk"'])
 
 
 if __name__ == "__main__":
