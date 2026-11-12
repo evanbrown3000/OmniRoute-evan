@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - agent-router-a2a-20261112-03
+      - agent-router-a2a-20261112-04
     paths:
       - ".github/workflows/agent-router-cross-platform.yml"
       - "docs/agent-execution/cross-platform-task.md"
