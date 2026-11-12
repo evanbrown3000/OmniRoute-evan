@@ -89,6 +89,22 @@ test("skillExecutor executes a registered handler and persists execution history
   assert.equal(listed[0].id, execution.id);
 });
 
+test("skillExecutor reloads persisted skills for a cold direct-execution scope", async () => {
+  const skill = await registerEchoSkill();
+  skillRegistry["registeredSkills"].clear();
+  skillRegistry["versionCache"].clear();
+  skillRegistry.invalidateCache();
+  skillExecutor.registerHandler("echo-handler", async (input) => ({ echoed: input.value }));
+  const result = await skillExecutor.execute(
+    "echo@1.0.0",
+    { value: "cold" },
+    { apiKeyId: "key-a" }
+  );
+  assert.equal(result.skillId, skill.id);
+  assert.equal(result.status, "success");
+  assert.deepEqual(result.output, { echoed: "cold" });
+});
+
 test("skillExecutor sanitizes failed outputs and nested error subtrees before persistence", async () => {
   await registerEchoSkill();
   const hostile =

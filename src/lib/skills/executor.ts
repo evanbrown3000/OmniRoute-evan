@@ -219,6 +219,7 @@ class SkillExecutor {
       throw new Error("Skills execution is disabled. Enable Skills in Settings > AI.");
     }
 
+    await skillRegistry.loadFromDatabase(context.apiKeyId);
     const skill = skillRegistry.getSkill(skillName, context.apiKeyId);
     if (!skill) {
       throw new Error(`Skill not found: ${skillName}`);
