@@ -17,3 +17,7 @@ Research current public GitHub repositories and agent platforms, including OpenH
 Actually invoke at least one independent agent on a different platform and wait for its provider-native completion/readback. A queued prompt, accepted request, HTTP acknowledgement, or model completion alone is not a completed agent turn. If an agent route fails, try a distinct supported route and report the exact result. The existing workflow's 36% additional-agent cadence should remain active.
 
 Do not fabricate provider executions, account creation, quotas, sources, or completion states. Do not bypass identity verification, billing controls, provider quotas, or rate limits. Do not store credentials in the repository. Keep this task and all resulting public material free of private memory-corpus contents.
+
+## Current-turn focus
+
+Review the existing cross-platform execution route and strengthen the evidence-backed long-term design. Actually invoke a distinct independent platform agent, wait for provider-native completion/readback, and capture browser HAR/backend endpoints where supported. Research public GitHub agent runtimes and official current free-tier documentation. Prefer existing production-capable implementations and one canonical graph authority. Keep private memory data isolated. Do not create accounts, store credentials, bypass provider identity checks or quotas, use paid skills, publish commercial listings, or transfer funds. Distinguish completed native agent turns from inference completions and queued acknowledgements.
