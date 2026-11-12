@@ -3,6 +3,8 @@
 REQUEST_ID: omniroute-20261112-agent-execution-review-02
 TARGET_AGENT: constructivecritic
 SECONDARY_AGENT: firstprinciplesanalyst
+RESUME_TASK_ID: 7b0d776a-9331-40ba-af9e-32cd4fa6dc91
+RESUME_AGENT_NAME: constructivecritic
 CROSS_PLATFORM_ONLY: true
 PUBLIC_SOURCES_ONLY: true
 
@@ -33,8 +35,9 @@ Observed execution evidence:
 - SoftwareEngineeringExpert and ResearchAgent recently returned HTTP 502.
 - TaskPlanner completed with a native task ID and terminal COMPLETED state, but produced an execution plan rather than a substantive architecture review.
 - The Agent Forge A2A call returned synchronously without substantive text.
-- A reasoningdelegationhigh invocation returned HTTP 200 and RUNNING, but the first receipt did not expose a task ID, so the workflow correctly refused to claim completion or launch a duplicate second agent.
-- The workflow now searches nested structured content and text for task IDs, polls the same ID up to three times, and retains sanitized HAR plus a summary artifact.
+- The reasoningdelegationhigh and constructivecritic tools returned provider-native TASK_ID and STATUS: RUNNING text; the first parser did not recognize this text form.
+- The exact constructivecritic task is now being resumed using task ID 7b0d776a-9331-40ba-af9e-32cd4fa6dc91. Do not submit a duplicate primary task.
+- The workflow now parses TASK_ID text, resumes the same task ID, polls it to terminal status, and retains sanitized HAR plus a summary artifact.
 
 Analyze:
 1. Critique the native execution/receipt contract. What is the correct provider-neutral representation for accepted, running, terminal, failed, and synchronous tasks? How should task IDs and correlation IDs be distinguished?

@@ -46,6 +46,8 @@ jobs:
           const requestId = taskText.match(/^REQUEST_ID:\s*(\S+)/mi)?.[1];
           const primaryName = taskText.match(/^TARGET_AGENT:\s*(\S+)/mi)?.[1] || "reasoningdelegationhigh";
           const configuredSecondary = taskText.match(/^SECONDARY_AGENT:\s*(\S+)/mi)?.[1] || "constructivecritic";
+          const resumeTaskId = taskText.match(/^RESUME_TASK_ID:\s*(\S+)/mi)?.[1] || null;
+          const resumeAgentName = taskText.match(/^RESUME_AGENT_NAME:\s*(\S+)/mi)?.[1] || primaryName;
           if (!requestId) throw new Error("Missing REQUEST_ID");
           const prompt = taskText.split("## Task")[1]?.trim() || taskText;
           const artifactDir = process.env.GITHUB_WORKSPACE + "/agent-router-artifacts";
@@ -100,7 +102,7 @@ jobs:
                   const nested = visit(parsed);
                   if (nested) return nested;
                 } catch {}
-                const match = raw.match(/(?:task[_ -]?id|taskid)\\s*["']?\\s*[:=]\\s*["']?([A-Za-z0-9._:-]{8,})/i);
+                const match = raw.match(/(?:task[_ -]?id|taskid)\s*["']?\s*[:=]\s*["']?([A-Za-z0-9._:-]{8,})/i);
                 return match?.[1] ?? null;
               }
               if (typeof node !== "object" || seen.has(node)) return null;
@@ -263,6 +265,53 @@ jobs:
             };
           };
 
+          const resumeAgent = async (page, taskId, name, id) => {
+            let finalResult = null;
+            let state = "RUNNING";
+            let waitError = null;
+            let waitedForTask = false;
+            let resolvedTaskId = taskId;
+            for (let poll = 0; poll < 3 && !isSuccess(state) && !isFailure(state); poll++) {
+              try {
+                const waited = await rpc(page, "tools/call", {
+                  name: "wait_for_task",
+                  arguments: { task_id: resolvedTaskId, max_wait_seconds: 300 }
+                }, id + poll, 310000);
+                finalResult = waited.parsed?.result ?? waited.parsed;
+                if (finalResult?.isError || waited.parsed?.isError) {
+                  throw new Error("wait_for_task returned an error: " + extractText(finalResult).slice(0, 1200));
+                }
+                resolvedTaskId = taskIdOf(finalResult) ?? resolvedTaskId;
+                state = stateOf(finalResult) || stateFromText(extractText(finalResult)) || state;
+                waitedForTask = true;
+              } catch (error) {
+                waitError = String(error).slice(0, 1600);
+                break;
+              }
+            }
+            const response = extractText(finalResult ?? {});
+            const pending = isPending(state) || /still working|accepted and queued|queued for processing/i.test(response);
+            const failed = isFailure(state) || Boolean(finalResult?.isError);
+            const completed = !pending && !failed && isSuccess(state) && response.trim().length > 120;
+            return {
+              provider: "Agent Router",
+              platform: "Agent Router native platform agent",
+              agent: name,
+              httpStatus: 200,
+              nativeTaskId: resolvedTaskId,
+              initialState: "RUNNING",
+              terminalState: state || "UNVERIFIED",
+              waitedForTask,
+              waitError,
+              completionEvidence: "resumed the exact existing provider-native task ID and read back its result",
+              completed,
+              pending,
+              responseLength: response.length,
+              responseSha256: sha256(response),
+              response
+            };
+          };
+
           try {
             browser = await chromium.launch({ headless: true });
             context = await browser.newContext({
@@ -323,22 +372,29 @@ jobs:
               "The parent will only count this assignment as complete if your native task reaches a terminal success state and this response is read back."
             ].join("\n\n");
 
-            const primaryNames = [primaryName, "firstprinciplesanalyst", "constructivecritic", "taskplanner"];
-            for (const name of [...new Set(primaryNames)]) {
-              if (!toolNames.includes(name)) continue;
-              try {
-                const receipt = await invokeAgent(page, toolSpecs, name, primaryPrompt, 100 + attempts.length * 10);
-                attempts.push({ agent: name, status: receipt.completed ? "completed" : receipt.pending ? "pending" : "incomplete", taskId: receipt.nativeTaskId, terminalState: receipt.terminalState });
-                if (receipt.completed) {
-                  primaryReceipt = receipt;
-                  break;
+            if (resumeTaskId) {
+              primaryReceipt = await resumeAgent(page, resumeTaskId, resumeAgentName, 80);
+              attempts.push({
+                agent: resumeAgentName,
+                status: primaryReceipt.completed ? "completed" : primaryReceipt.pending ? "pending" : "incomplete",
+                taskId: primaryReceipt.nativeTaskId,
+                terminalState: primaryReceipt.terminalState,
+                resumed: true
+              });
+            } else {
+              const primaryNames = [primaryName, "firstprinciplesanalyst", "constructivecritic", "taskplanner"];
+              for (const name of [...new Set(primaryNames)]) {
+                if (!toolNames.includes(name)) continue;
+                try {
+                  const receipt = await invokeAgent(page, toolSpecs, name, primaryPrompt, 100 + attempts.length * 10);
+                  attempts.push({ agent: name, status: receipt.completed ? "completed" : receipt.pending ? "pending" : "incomplete", taskId: receipt.nativeTaskId, terminalState: receipt.terminalState });
+                  if (receipt.completed || receipt.pending) {
+                    primaryReceipt = receipt;
+                    break;
+                  }
+                } catch (error) {
+                  attempts.push({ agent: name, status: "failed", error: String(error).slice(0, 1600) });
                 }
-                if (receipt.pending) {
-                  primaryReceipt = receipt;
-                  break;
-                }
-              } catch (error) {
-                attempts.push({ agent: name, status: "failed", error: String(error).slice(0, 1600) });
               }
             }
 
@@ -438,6 +494,8 @@ jobs:
           const summary = {
             requestId,
             primaryAgentRequested: primaryName,
+            resumedTaskId: resumeTaskId,
+            resumedAgentName: resumeTaskId ? resumeAgentName : null,
             primaryAttempts: attempts,
             primaryReceipt,
             secondaryDecision,
