@@ -370,25 +370,38 @@ jobs:
             let result = initial.parsed?.result ?? initial.parsed;
             let responseText = extractText(result);
             let taskId = result?.structuredContent?.task_id
+              || result?.structuredContent?.taskId
+              || result?.structuredContent?.task?.id
               || result?.task_id
+              || result?.taskId
               || result?.task?.id
               || responseText.match(/task[_ -]?id\s*[:=]\s*([A-Za-z0-9._:-]+)/i)?.[1]
               || null;
             let waitedForTask = false;
             const readState = value => String(
+              value?.structuredContent?.task?.state ??
               value?.structuredContent?.state ??
               value?.structuredContent?.status ??
+              value?.task?.state ??
               value?.state ??
               value?.status ??
               ""
             ).toUpperCase();
             let state = readState(result) || responseText.match(/STATUS:\s*([A-Z_-]+)/i)?.[1]?.toUpperCase() || "";
-            const pending = value => /RUNNING|IN_PROGRESS|QUEUED|PENDING|WAITING|INPUT_REQUIRED/.test(
-              readState(value) + " " + extractText(value)
+            const pending = value => /RUNNING|IN_PROGRESS|QUEUED|PENDING|WAITING|INPUT_REQUIRED|STILL RUNNING/.test(
+              readState(value) + " " + extractText(value).toUpperCase()
             );
-            if (taskId && (pending(result) || !/COMPLETED|SUCCESS|SUCCEEDED|DONE/.test(state))) {
+            const terminalSuccess = value => /^(COMPLETED|SUCCESS|SUCCEEDED|DONE)$/.test(readState(value))
+              || /STATUS:\s*(COMPLETED|SUCCESS|SUCCEEDED|DONE)/i.test(extractText(value));
+            const terminalFailure = value => Boolean(value?.isError)
+              || /^(FAILED|ERROR|CANCELLED|TIMED_OUT)$/.test(readState(value))
+              || /STATUS:\s*(FAILED|ERROR|CANCELLED|TIMED_OUT)/i.test(extractText(value));
+            if (taskId && !terminalSuccess(result) && !terminalFailure(result)) {
               waitedForTask = true;
-              for (let poll = 0; poll < 2; poll++) {
+              // The workflow has a 25-minute ceiling. Keep one native task alive and
+              // read it back for up to 16 minutes; never launch a duplicate fallback
+              // merely because the first provider has not finished yet.
+              for (let poll = 0; poll < 8; poll++) {
                 const waited = await rpc("tools/call", {
                   name: "wait_for_task",
                   arguments: { task_id: taskId, max_wait_seconds: 120 }
@@ -396,34 +409,31 @@ jobs:
                 result = waited.parsed?.result ?? waited.parsed;
                 responseText = extractText(result);
                 state = readState(result) || responseText.match(/STATUS:\s*([A-Z_-]+)/i)?.[1]?.toUpperCase() || "";
-                const terminal = /^(COMPLETED|SUCCESS|SUCCEEDED|DONE|FAILED|ERROR|CANCELLED|TIMED_OUT)$/.test(state)
-                  || /STATUS:\s*(COMPLETED|SUCCESS|SUCCEEDED|DONE|FAILED|ERROR|CANCELLED|TIMED_OUT)/i.test(responseText);
-                const stillRunning = /RUNNING|IN_PROGRESS|QUEUED|PENDING|WAITING|INPUT_REQUIRED|STILL RUNNING/.test(
-                  state + " " + responseText.toUpperCase()
-                );
+                const success = terminalSuccess(result);
+                const failure = terminalFailure(result);
+                const stillRunning = pending(result);
                 console.log("TASK_WAIT_POLL=" + JSON.stringify({
-                  name, taskId, poll: poll + 1, state, terminal, stillRunning,
-                  responseLength: responseText.length
+                  name, taskId, poll: poll + 1, state, terminalSuccess: success,
+                  terminalFailure: failure, stillRunning, responseLength: responseText.length
                 }));
-                if (terminal || !stillRunning) break;
+                if (success || failure) break;
               }
             }
-            const isPending = /RUNNING|IN_PROGRESS|QUEUED|PENDING|WAITING|INPUT_REQUIRED/.test(
-              state + " " + responseText
-            );
-            const explicitComplete = /STATUS:\s*(COMPLETED|SUCCESS|SUCCEEDED|DONE)/i.test(responseText)
-              || /^(COMPLETED|SUCCESS|SUCCEEDED|DONE)$/.test(state);
-            const failed = Boolean(result?.isError || initial.parsed?.isError || initial.parsed?.error)
-              || /STATUS:\s*(FAILED|ERROR|CANCELLED|TIMED_OUT)/i.test(responseText)
-              || /^(FAILED|ERROR|CANCELLED|TIMED_OUT)$/.test(state);
-            const directComplete = responseText.trim().length > 200 && !isPending && !failed && (!taskId || waitedForTask);
-            const isComplete = !failed && !isPending && (explicitComplete || directComplete);
+            const explicitComplete = terminalSuccess(result);
+            const failed = terminalFailure(result) || Boolean(initial.parsed?.isError || initial.parsed?.error);
+            const isPending = !explicitComplete && !failed && pending(result);
+            // A task ID makes provider-native terminal state mandatory. A long text
+            // response is sufficient only for a synchronous agent tool that returned
+            // no task ID; text length must never substitute for async task completion.
+            const directComplete = !taskId && responseText.trim().length > 200 && !isPending && !failed;
+            const isComplete = !failed && !isPending && (taskId ? explicitComplete : (explicitComplete || directComplete));
             return {
               name,
               status: isComplete ? "completed" : failed ? "failed" : "incomplete",
               httpStatus: initial.status,
               taskId: taskId ?? null,
               state: state || (isComplete ? "completed-response" : "unverified"),
+              waitedForTask,
               response: responseText
             };
           };
@@ -443,14 +453,22 @@ jobs:
             await runCandidate(selectedNames[index], 10 + index);
           }
           let completed = results.filter(item => item.status === "completed" && item.response?.length > 80);
-          for (let index = 0; !completed.length && index < candidateNames.length; index++) {
+          let unresolvedNativeTask = results.some(item => item.status === "incomplete" && item.taskId);
+          for (let index = 0; !completed.length && !unresolvedNativeTask && index < candidateNames.length; index++) {
             const name = candidateNames[index];
             if (attemptedNames.has(name)) continue;
             await runCandidate(name, 30 + index);
             completed = results.filter(item => item.status === "completed" && item.response?.length > 80);
+            unresolvedNativeTask = results.some(item => item.status === "incomplete" && item.taskId);
+          }
+          if (unresolvedNativeTask) {
+            console.log("NATIVE_TASK_STILL_PENDING_NO_DUPLICATE_FALLBACK=" + JSON.stringify(
+              results.filter(item => item.status === "incomplete" && item.taskId)
+                .map(item => ({ name: item.name, taskId: item.taskId, state: item.state }))
+            ));
           }
           if (!completed.length) {
-            throw new Error("No platform-native agent completed after all advertised fallback agents: " + JSON.stringify(results));
+            throw new Error("No platform-native agent reached a verified terminal completion after all safe fallback options: " + JSON.stringify(results));
           }
 
           const output = {
