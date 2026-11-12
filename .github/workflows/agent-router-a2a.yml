@@ -135,89 +135,120 @@ jobs:
           };
 
           const toolsResponse = await rpc("tools/list", {}, 1);
-          const toolNames = (toolsResponse.parsed?.result?.tools ?? []).map(tool => tool.name);
-          if (!toolNames.includes("a2a_call_agent")) {
-            throw new Error("Agent Router MCP did not advertise a2a_call_agent");
-          }
-
-          let discovery = null;
-          try {
-            discovery = await rpc("tools/call", {
-              name: "discover_agents",
-              arguments: { query: "software architecture and agent execution", limit: 10 }
-            }, 2);
-          } catch (error) {
-            console.log("DISCOVERY_FALLBACK=" + String(error));
-          }
+          const toolSpecs = toolsResponse.parsed?.result?.tools ?? [];
+          const toolNames = toolSpecs.map(tool => tool.name);
+          const selectedNames = ["softwareengineeringexpert", "researchagent"];
+          const selectedSpecs = toolSpecs.filter(tool => selectedNames.includes(tool.name));
+          console.log("AGENT_TOOL_SCHEMAS=" + JSON.stringify(selectedSpecs.map(tool => ({
+            name: tool.name,
+            inputSchema: tool.inputSchema
+          }))));
 
           const prompt = [
-            "You are an independent software-systems architect. Review this verified OmniRoute implementation inventory and give a source-backed architecture recommendation.",
+            "You are an independent software-systems architect and researcher. Review the verified OmniRoute implementation inventory below and provide a source-backed recommendation.",
             "Repository: https://github.com/evanbrown3000/OmniRoute-evan/tree/release/v3.8.54",
             "Existing implementation: provider-node API includes GET/POST /api/provider-nodes and POST /api/provider-nodes/validate; isolated Chromium/VNC/CDP provider-login sessions use management-authenticated /api/vnc-session routes, localhost-bound browser/CDP ports, up to four concurrent sessions, non-persistent profiles by default, ten-minute idle timeout and thirty-minute maximum lifetime; AgentBridge exposes IDE-agent routing and mappings; a Devin ACP bridge supplies a Claude-format tool-capable provider; routing already includes a large provider catalog, free-tier evidence, quota-aware selection, health and failover.",
             "Goal: expand durable remote execution providers and browser sessions without starting from scratch. Distinguish (1) model inference endpoints, (2) native agent turns with provider-native completion evidence, and (3) browser sessions with HAR/backend endpoint evidence.",
             "Compare current public options including Agent Router MCP/A2A, OpenWOP, OpenHands Cloud, Cloudflare Browser Run, Browserbase, Browserless and any stronger free-tier alternatives you can verify.",
-            "Recommend one long-term design and the strongest existing implementation to promote; identify the minimal integration points, provider failover boundaries, durable identity/secret boundaries, and how to prove a turn actually completed rather than merely being queued.",
+            "Recommend one long-term design and the strongest existing architecture to promote; identify minimal integration points, provider failover boundaries, durable identity/secret boundaries, and how to prove a turn actually completed rather than merely being queued.",
             "Do not modify code, create accounts, run tests, assume a free tier without current evidence, or invent successful provider executions. Include direct source URLs and concise reasoning."
           ].join("\n\n");
 
-          const candidates = [
-            "https://social.duoleads.com/a2a",
-            "https://localmark.ai/a2a",
-            "https://duami.ai/a2a"
-          ];
-          const failures = [];
-          let completed = null;
-
-          for (let index = 0; index < candidates.length; index++) {
-            const agentUrl = candidates[index];
-            try {
-              const response = await rpc("tools/call", {
-                name: "a2a_call_agent",
-                arguments: {
-                  agent_url: agentUrl,
-                  message: prompt,
-                  timeout_seconds: 35
-                }
-              }, 10 + index);
-              const result = response.parsed?.result ?? response.parsed;
-              const textContent = (result?.content ?? [])
-                .filter(item => item.type === "text")
-                .map(item => item.text)
-                .join("\n");
-              const isError = Boolean(result?.isError || response.parsed?.isError || response.parsed?.error);
-              if (!isError && textContent.trim().length > 80) {
-                completed = { agentUrl, httpStatus: response.status, response: textContent };
-                break;
+          const repoUrl = "https://github.com/evanbrown3000/OmniRoute-evan/tree/release/v3.8.54";
+          const buildArgs = (spec) => {
+            const properties = spec.inputSchema?.properties ?? {};
+            const required = spec.inputSchema?.required ?? [];
+            const args = {};
+            for (const key of required) {
+              const normalized = key.toLowerCase();
+              const property = properties[key] ?? {};
+              if (/repo|repository|github|source|url/.test(normalized)) {
+                args[key] = repoUrl;
+              } else if (/query|question|prompt|task|request|goal|objective|instruction|topic|problem|message|description|context|input/.test(normalized)) {
+                args[key] = prompt;
+              } else if (/timeout|wait/.test(normalized)) {
+                args[key] = 180;
+              } else if (/limit|count|top.?k|number|num/.test(normalized)) {
+                args[key] = 8;
+              } else if (property.type === "string") {
+                args[key] = prompt;
+              } else if (property.type === "integer" || property.type === "number") {
+                args[key] = property.default ?? 5;
+              } else if (property.type === "boolean") {
+                args[key] = property.default ?? false;
+              } else if (property.type === "array") {
+                args[key] = property.default ?? [];
+              } else if (property.type === "object") {
+                args[key] = property.default ?? {};
               }
-              failures.push({ agentUrl, reason: textContent.slice(0, 800) || "Empty/error result" });
+            }
+            return args;
+          };
+
+          const extractText = (result) => {
+            const parts = result?.content ?? [];
+            return parts.filter(item => item.type === "text").map(item => item.text).join("\n")
+              || JSON.stringify(result?.structuredContent ?? result ?? {});
+          };
+
+          const callAgentTool = async (name, id) => {
+            const spec = selectedSpecs.find(item => item.name === name);
+            if (!spec) return { name, error: "Agent Router did not advertise this agent tool" };
+            const args = buildArgs(spec);
+            const missing = (spec.inputSchema?.required ?? []).filter(key => !(key in args));
+            if (missing.length) return { name, error: "Required input mapping missing: " + missing.join(", "), schema: spec.inputSchema };
+            const initial = await rpc("tools/call", { name, arguments: args }, id);
+            let result = initial.parsed?.result ?? initial.parsed;
+            let responseText = extractText(result);
+            const taskId = result?.structuredContent?.task_id
+              || result?.task_id
+              || responseText.match(/task[_ ]?id\\s*[:=]\\s*([a-f0-9-]+)/i)?.[1];
+            if (taskId && /RUNNING|IN_PROGRESS/i.test(responseText)) {
+              const waited = await rpc("tools/call", {
+                name: "wait_for_task",
+                arguments: { task_id: taskId, max_wait_seconds: 180 }
+              }, id + 100);
+              result = waited.parsed?.result ?? waited.parsed;
+              responseText = extractText(result);
+            }
+            const failed = Boolean(result?.isError || initial.parsed?.isError || initial.parsed?.error)
+              || /STATUS:\\s*(FAILED|ERROR)|\\bERROR\\b/i.test(responseText);
+            return {
+              name,
+              status: failed ? "failed" : "completed",
+              httpStatus: initial.status,
+              taskId: taskId ?? null,
+              response: responseText
+            };
+          };
+
+          const results = [];
+          for (let index = 0; index < selectedNames.length; index++) {
+            const name = selectedNames[index];
+            try {
+              results.push(await callAgentTool(name, 10 + index));
             } catch (error) {
-              failures.push({ agentUrl, reason: String(error).slice(0, 1000) });
+              results.push({ name, status: "failed", error: String(error).slice(0, 2000) });
             }
           }
-
-          if (!completed) {
-            throw new Error("No native A2A agent turn completed: " + JSON.stringify(failures));
+          const completed = results.filter(item => item.status === "completed" && item.response?.length > 80);
+          if (!completed.length) {
+            throw new Error("No platform-native agent completed: " + JSON.stringify(results));
           }
 
           const output = {
             status: "completed",
-            provider: "Agent Router MCP / A2A",
-            agentUrl: completed.agentUrl,
-            httpStatus: completed.httpStatus,
-            responseLength: completed.response.length,
-            response: completed.response.slice(0, 12000),
-            failedAlternates: failures,
-            advertisedTools: toolNames,
-            discoveredAgents: discovery?.parsed?.result?.content ?? null
+            provider: "Agent Router MCP platform agents",
+            results,
+            advertisedTools: toolNames
           };
           console.log("NATIVE_AGENT_RESULT=" + JSON.stringify(output));
           fs.appendFileSync(
             process.env.GITHUB_STEP_SUMMARY,
             "## Native cross-platform agent execution\n\n" +
-            "- Provider: Agent Router MCP / A2A\n" +
-            "- Agent: " + completed.agentUrl + "\n" +
-            "- Native HTTP status: " + completed.httpStatus + "\n" +
-            "- Response characters: " + completed.response.length + "\n\n" +
-            completed.response.slice(0, 12000) + "\n"
+            results.map(item => "### " + item.name + "\n\n" +
+              "- Status: " + (item.status ?? "failed") + "\n" +
+              (item.taskId ? "- Native task ID: " + item.taskId + "\n" : "") +
+              (item.response ? "\n" + item.response.slice(0, 12000) : "\n" + (item.error ?? "")) + "\n"
+            ).join("\n")
           );
-          NODE
