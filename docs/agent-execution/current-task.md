@@ -25,6 +25,16 @@ Review upstream-only changes as candidates, not as automatically authoritative. 
 
 Inspect actual patches and their interaction with the fork's custom A2A/agent-execution workflows. Preserve the fork's useful 17 commits. Do not merge or edit gateway source code in this review run.
 
+## Verified implementation boundary
+
+The source currently exposes two materially different execution paths:
+
+- OmniRoute's local A2A `smart-routing` skill calls its own `/v1/chat/completions` endpoint and returns a text artifact plus routing metadata. The A2A task manager tracks local task lifecycle/state. This is useful gateway orchestration, but it is an inference completion—not evidence that a distinct external agent platform executed a native task.
+- The CloudAgent registry contains adapters for Jules, Devin, Codex Cloud, and Cursor Cloud. Their common interface includes `createTask`, `getStatus`, `sendMessage`, `listSources`, and provider-specific approval handling. The Cursor adapter explicitly marks its API contract as awaiting live validation. Adapter code or a configured connection alone is not proof of a successful provider-native turn; verify the external task ID, terminal state, result/activity readback, and beneficiary use.
+- The `agent-router-a2a.yml` workflow is a separate external route. Its browser/HAR discovery and Agent Router MCP invocation must be evaluated independently from OmniRoute's local A2A skill server.
+- ACP/IDE bridges and local browser sessions may be valuable execution surfaces, but they should not be counted as hosted native-agent turns unless the remote provider itself supplies a task identity and terminal readback.
+- Never move account credentials into this public repository. Use the existing account/secret custody boundary and verify only capability state needed for dispatch.
+
 ## This run: provider-first native agent review
 
 Use the existing `.github/workflows/agent-router-a2a.yml` route. Start with its real browser surface and capture the HAR for Agent Router pricing, DeepWiki, and the MCP endpoint. Record observed request methods, URLs, status codes, discovered agent-tool names, and input schemas. Do not retain cookies, tokens, authorization headers, or private payloads.
