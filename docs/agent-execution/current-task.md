@@ -56,3 +56,10 @@ Research current public GitHub projects and official provider documentation for 
 - Secondary-agent evidence if selected; otherwise deterministic selection result.
 - Any pending-task `RESUME_TASK` directive.
 - Source-backed comparison and one long-term promotion recommendation with exact paths, owner boundaries, integration seam, and unresolved blockers.
+
+
+## Same-task independent readback continuation — 2026-11-12
+
+The first native Agent Router run returned this provider task as `COMPLETED`. Re-read the exact same native task in a separate workflow run; do not dispatch a replacement task.
+
+RESUME_TASK: reasoningdelegationhigh = b5aa7a60-ec6c-440e-b750-b861f1ad3ec2
