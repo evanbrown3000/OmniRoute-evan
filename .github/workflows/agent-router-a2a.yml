@@ -1,13 +1,15 @@
 name: One-shot cross-platform agent review
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - agent-router-a2a-20261112-01
     paths:
       - ".github/workflows/agent-router-a2a.yml"
 
-permissions: {}
+permissions:
+  actions: write
 
 jobs:
   agent-review:
@@ -15,7 +17,7 @@ jobs:
     container:
       image: mcr.microsoft.com/playwright:v1.65.0-resolute
       options: --ipc=host
-    timeout-minutes: 8
+    timeout-minutes: 12
     steps:
       - name: Install matching Playwright package
         run: |
@@ -44,6 +46,7 @@ jobs:
           let pricingTitle = "";
           let pricingText = "";
           let browserMcpProbe = null;
+          const deepwikiPages = [];
 
           try {
             const pricing = await page.goto("https://www.agent-router.org/pricing", {
@@ -54,6 +57,27 @@ jobs:
             pricingUrl = page.url();
             pricingTitle = await page.title();
             pricingText = (await page.locator("body").innerText().catch(() => "")).slice(0, 2500);
+
+            for (const url of [
+              "https://deepwiki.com/cheaper-inference/OmniRoute",
+              "https://deepwiki.com/evanbrown3000/OmniRoute-evan"
+            ]) {
+              try {
+                const response = await page.goto(url, {
+                  waitUntil: "domcontentloaded",
+                  timeout: 30000
+                });
+                deepwikiPages.push({
+                  url,
+                  finalUrl: page.url(),
+                  status: response?.status() ?? null,
+                  title: await page.title(),
+                  excerpt: (await page.locator("body").innerText().catch(() => "")).slice(0, 1800)
+                });
+              } catch (error) {
+                deepwikiPages.push({ url, error: String(error).slice(0, 500) });
+              }
+            }
 
             await page.goto("https://agent-router.org/", {
               waitUntil: "domcontentloaded",
@@ -92,8 +116,6 @@ jobs:
             }))
             .filter(entry => /agent-router|mcp-http|a2a/i.test(entry.url))
             .slice(0, 40);
-          fs.rmSync(harPath, { force: true });
-
           console.log("BROWSER_HAR_EVIDENCE=" + JSON.stringify({
             pricingStatus,
             pricingUrl,
@@ -101,11 +123,12 @@ jobs:
             pricingSaysNoSignup: /no sign-up/i.test(pricingText),
             pricingExcerpt: pricingText,
             browserMcpProbe,
+            deepwikiPages,
             backendRequests: requests
           }));
 
           const endpoint = "https://agent-router.org/mcp-http/mcp";
-          const rpc = async (method, params, id) => {
+          const rpc = async (method, params, id, timeoutMs = 55000) => {
             const response = await fetch(endpoint, {
               method: "POST",
               headers: {
@@ -113,7 +136,7 @@ jobs:
                 "accept": "application/json, text/event-stream"
               },
               body: JSON.stringify({ jsonrpc: "2.0", id, method, params }),
-              signal: AbortSignal.timeout(55000)
+              signal: AbortSignal.timeout(timeoutMs)
             });
             const raw = await response.text();
             let parsed;
@@ -149,9 +172,11 @@ jobs:
             "Repository: https://github.com/evanbrown3000/OmniRoute-evan/tree/release/v3.8.54",
             "Existing implementation: provider-node API includes GET/POST /api/provider-nodes and POST /api/provider-nodes/validate; isolated Chromium/VNC/CDP provider-login sessions use management-authenticated /api/vnc-session routes, localhost-bound browser/CDP ports, up to four concurrent sessions, non-persistent profiles by default, ten-minute idle timeout and thirty-minute maximum lifetime; AgentBridge exposes IDE-agent routing and mappings; a Devin ACP bridge supplies a Claude-format tool-capable provider; routing already includes a large provider catalog, free-tier evidence, quota-aware selection, health and failover.",
             "Goal: expand durable remote execution providers and browser sessions without starting from scratch. Distinguish (1) model inference endpoints, (2) native agent turns with provider-native completion evidence, and (3) browser sessions with HAR/backend endpoint evidence.",
+            "Use DeepWiki at https://deepwiki.com/cheaper-inference/OmniRoute and https://deepwiki.com/evanbrown3000/OmniRoute-evan when available; cross-check its claims against current source code and public documentation.",
             "Compare current public options including Agent Router MCP/A2A, OpenWOP, OpenHands Cloud, Cloudflare Browser Run, Browserbase, Browserless and any stronger free-tier alternatives you can verify.",
             "Recommend one long-term design and the strongest existing architecture to promote; identify minimal integration points, provider failover boundaries, durable identity/secret boundaries, and how to prove a turn actually completed rather than merely being queued.",
-            "Do not modify code, create accounts, run tests, assume a free tier without current evidence, or invent successful provider executions. Include direct source URLs and concise reasoning."
+            "Do not modify code, create accounts, run tests, assume a free tier without current evidence, or invent successful provider executions. Include direct source URLs and concise reasoning.",
+            "The related private agent-memory-corpus store is restricted to rendered conversation Markdown and summary reports; GraphX remains the graph authority. Recommend content-level links rather than a competing graph store."
           ].join("\n\n");
 
           const repoUrl = "https://github.com/evanbrown3000/OmniRoute-evan/tree/release/v3.8.54";
@@ -186,6 +211,15 @@ jobs:
             if (Array.isArray(schema.enum) && schema.enum.length) return schema.enum[0];
             if (schema.type === "object" || schema.properties) {
               const properties = schema.properties ?? {};
+              if (!Object.keys(properties).length) {
+                return {
+                  prompt: task,
+                  task,
+                  query: task,
+                  repository_url: repoUrl,
+                  repository: repoUrl
+                };
+              }
               const required = schema.required ?? Object.keys(properties);
               const value = {};
               for (const child of required) {
@@ -215,6 +249,22 @@ jobs:
             const schema = spec.inputSchema ?? {};
             return buildSchemaValue(schema, schema, "", task, taskId);
           };
+
+          let discovery = null;
+          const discoverySpec = toolSpecs.find(item => item.name === "discover_agents");
+          if (discoverySpec) {
+            const discoveryArgs = buildArgs(
+              discoverySpec,
+              "Find active platform agents for an independent software architecture review of the OmniRoute repository, with emphasis on remote browser sessions and provider-native execution."
+            );
+            const discoveryResponse = await rpc(
+              "tools/call",
+              { name: "discover_agents", arguments: discoveryArgs },
+              2
+            );
+            discovery = discoveryResponse.parsed?.result ?? discoveryResponse.parsed;
+            console.log("AGENT_DISCOVERY_RESULT=" + JSON.stringify(discovery));
+          }
 
           const extractText = (result) => {
             const parts = result?.content ?? [];
@@ -252,7 +302,7 @@ jobs:
                 const waited = await rpc("tools/call", {
                   name: "wait_for_task",
                   arguments: waitArgs
-                }, id + 100);
+                }, id + 100, 210000);
                 result = waited.parsed?.result ?? waited.parsed;
                 responseText = extractText(result);
                 state = readState(result) || responseText.match(/STATUS:\\s*([A-Z_-]+)/i)?.[1]?.toUpperCase() || state;
@@ -296,7 +346,8 @@ jobs:
             status: "completed",
             provider: "Agent Router MCP platform agents",
             results,
-            advertisedTools: toolNames
+            advertisedTools: toolNames,
+            discovery
           };
           console.log("NATIVE_AGENT_RESULT=" + JSON.stringify(output));
           fs.appendFileSync(
@@ -308,3 +359,13 @@ jobs:
               (item.response ? "\n" + item.response.slice(0, 12000) : "\n" + (item.error ?? "")) + "\n"
             ).join("\n")
           );
+          NODE
+
+      - name: Retain browser HAR artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-router-browser-har-${{ github.run_id }}
+          path: ${{ runner.temp }}/agent-router.har
+          if-no-files-found: warn
+          retention-days: 7
