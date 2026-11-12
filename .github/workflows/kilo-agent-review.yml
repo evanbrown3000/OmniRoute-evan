@@ -12,7 +12,7 @@ on:
         description: "Historical implementation ref to compare"
         required: true
         type: string
-        default: "agent-router-a2a-20261112-06"
+        default: "agent-router-a2a-20261113-01"
   push:
     branches:
       - kilo-agent-review-20261112-01
@@ -53,7 +53,7 @@ jobs:
             *) echo "Unsupported base ref: $BASE_REF"; exit 2 ;;
           esac
           case "$HEAD_REF" in
-            "agent-router-a2a-20261112-06") ;;
+            "agent-router-a2a-20261113-01") ;;
             *) echo "Unsupported historical ref: $HEAD_REF"; exit 2 ;;
           esac
           mkdir -p artifacts/source
@@ -84,6 +84,14 @@ jobs:
             echo "- Lordevo Shop external A2A preflight returned HTTP 200 and COMPLETED with context ID 4992785b-da6c-4eef-bfbe-4502976fb7c1. This is an external A2A utility/context receipt, not an LLM agent task ID."
             echo "- Sanitized HAR artifact: 44 entries, 3 POSTs to https://www.agent-router.org/mcp-http/mcp, no request/response bodies or headers. DeepWiki requests returned HTTP 429."
             echo "- Node-side native task submission and terminal polling are evidenced in the GitHub Actions log, not in the browser HAR."
+            echo
+            echo "## Run #35 false-pending classification evidence"
+            echo "- GitHub Actions run: https://github.com/evanbrown3000/OmniRoute-evan/actions/runs/43256816127"
+            echo "- TaskPlanner task ID: a356742a-afb0-4f57-9d5d-f96a1e5634eb; provider state COMPLETED; success=true; pending=true because the previous resume classifier searched the entire response body for PENDING."
+            echo "- The response itself contained a provider status line STATUS: COMPLETED. The body also discussed pending work, which incorrectly overrode the terminal state."
+            echo "- Additional-agent selection: requestId gpt6-20261112-omniroute-federation-live-12-readback; probability 0.36; hashBucket 17; selected=true; primary taskplanner; secondary firstprinciplesanalyst. The secondary was skipped because the primary was misclassified incomplete."
+            echo "- External A2A preflight: HTTP 200, COMPLETED, context ID 03487096-5b1c-4f3c-be7b-1d9e5af1d1d6. This is an A2A context receipt, not an LLM task ID."
+            echo "- Promotion candidate agent-router-a2a-20261113-01 changes resume classification to provider-declared structured state or an anchored STATUS/STATE line, records stateSource, and removes prose-based pending detection."
             echo
             echo "## External capacity evidence"
             echo "- Vercel Hobby sandbox creation was rejected with HTTP 402 resource_creation_blocked because the team exceeded fair-use limits. Do not bypass or change billing/security settings automatically."
@@ -122,7 +130,7 @@ jobs:
             --model "$KILO_MODEL_ID" \
             --title "OmniRoute historical branch promotion review" \
             --format json \
-            "Read artifacts/source/review-context.md and all four line-numbered source snapshots under artifacts/source/. Compare release/v3.8.54 with agent-router-a2a-20261112-06. Produce a source-backed engineering decision, not a generic plan. Cite at least two exact file:line references from each relevant branch. Explicitly evaluate the 36% independent secondary branch, primary-first state machine, same-ID terminal polling, resume semantics, semantic quality gates, HAR evidence, external A2A distinction, and the conflict between any GitHub cron schedule and Pipeline's sole-scheduler ownership. State whether the historical workflow should be promoted, what must change before promotion, and what must remain separate. Do not modify files, run tests, or use shell." \
+            "Read artifacts/source/review-context.md and all four line-numbered source snapshots under artifacts/source/. Compare release/v3.8.54 with agent-router-a2a-20261113-01. Produce a source-backed engineering decision, not a generic plan. Cite at least two exact file:line references from each relevant branch. Explicitly evaluate the provider-state-only terminal classification change against the prior false-pending result, the 36% independent secondary branch, primary-first state machine, same-ID terminal polling, resume semantics, semantic quality gates, HAR evidence, external A2A distinction, and the conflict between any GitHub cron schedule and Pipeline's sole-scheduler ownership. State whether the historical workflow should be promoted, what must change before promotion, and what must remain separate. Do not modify files, run tests, or use shell." \
             > artifacts/kilo-review.jsonl 2> artifacts/kilo-review.stderr
           code=$?
           echo "$code" > artifacts/kilo-exit-code.txt
@@ -150,13 +158,13 @@ jobs:
           const answer = parts.join('\n').trim();
           const pathRefs = [...new Set((answer.match(/(?:\.github\/|docs\/)[A-Za-z0-9_./-]+/g) || []))];
           const lineRefs = answer.match(/(?:\bL\d+\b|\bline\s+\d+\b|:\d+(?:-\d+)?)/gi) || [];
-          const branches = ['release/v3.8.54','agent-router-a2a-20261112-06'].filter(x => answer.includes(x));
+          const branches = ['release/v3.8.54','agent-router-a2a-20261113-01'].filter(x => answer.includes(x));
           const exitCode = Number(fs.readFileSync('artifacts/kilo-exit-code.txt','utf8').trim() || '1');
           const qualityGatePassed = exitCode === 0 && answer.length >= 1400 && pathRefs.length >= 2 && lineRefs.length >= 2 && branches.length === 2 && /pipeline/i.test(answer) && /(promot|promotion|merge)/i.test(answer);
           const receipt = {
             provider: 'Kilo Code CLI / Kilo AI Gateway',
             access: 'anonymous free model; no account or API key',
-            model: 'kilocode/minimax/minimax-m2.1:free',
+            model: process.env.KILO_MODEL_ID || process.env.KILO_MODEL || 'unknown',
             githubRunId: process.env.GITHUB_RUN_ID,
             githubRunUrl: 'https://github.com/evanbrown3000/OmniRoute-evan/actions/runs/' + process.env.GITHUB_RUN_ID,
             baseRef: process.env.BASE_REF,
