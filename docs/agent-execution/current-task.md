@@ -65,3 +65,7 @@ Invoke the SoftwareEngineeringExpert primary agent for a source-backed review of
 
 The earlier Social Media Data API A2A exchange was only a paid-service catalog. Do not call any paid x402 skill. Invoke a distinct external A2A successor only if the registry explicitly identifies the selected skill as no-charge and its capability is relevant to the architecture review; otherwise report that no suitable no-charge successor was exposed.
 
+
+## Owner-triggered workflow invocation — 2026-11-12
+
+This documentation-only commit is the single trigger for the existing GitHub-hosted Playwright/A2A workflow for request `gpt6-20261112-omniroute-federation-13`. Preserve that request identity for reproducible 36% secondary-agent selection. Run the workflow once, capture sanitized browser/MCP evidence, dispatch the SoftwareEngineeringExpert primary agent, dispatch the selected secondary only if the deterministic sample selects it, and independently read back every provider-native task. Do not create duplicate tasks while any task is unresolved. This is not authorization to create accounts, use new credentials, incur paid charges, bypass provider limits, modify application code, or access private memory.
