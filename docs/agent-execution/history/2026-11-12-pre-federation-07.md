@@ -231,3 +231,18 @@ Required evidence: GitHub workflow run ID and status; sanitized HAR artifact nam
 - Sanitization audit: zero request/response headers, cookies, query strings, request bodies, response bodies, or URL query values remained in the HAR.
 - Artifact: [agent-router-evidence-43246217443](https://github.com/evanbrown3000/OmniRoute-evan/actions/runs/43246217443/artifacts/13956594542). The ZIP contains only `agent-router-sanitized.har`. Although the workflow attempted to write/upload `agent-router-har-index.json`, `agent-router-mcp-trace.json`, and `agent-router-native-task-receipt.json`, the upload log reports "1 file uploaded"; those three files are absent from the artifact. Treat the evidence bundle as incomplete.
 - Follow-up: remove the now-completed `RESUME_TASK` directive before starting a genuinely new native task. Correct the durable evidence packaging boundary so the HAR, MCP trace, task receipt, and index are placed in one shared workspace directory and the artifact manifest is checked against the expected four files. Keep Work Episode as the canonical turn/evidence owner; this workflow artifact is transport evidence, not a competing ledger.
+
+
+---
+
+## Run 61 — same-task independent readback — 2026-11-12
+
+- Workflow: [43247478709](https://github.com/evanbrown3000/OmniRoute-evan/actions/runs/43247478709), run number 61, push event on `agent-router-a2a-20261112-05`.
+- Commit: `1c227a5c9f0507dcd108d58aa9159e0ace432e09`; job ID `131283931110`; job completed/success.
+- This run followed the active turn-12 instruction and re-read the same completed native task; it did not create a new provider-native task.
+- Native task ID: `b5aa7a60-ec6c-440e-b750-b861f1ad3ec2`; tool `reasoningdelegationhigh`; state `COMPLETED`; same 1,328-byte response and SHA-256 `b57e758382aaeee1bbcd4e04626abc057e10508bff4afa9d6b72cb7dcb94953d`.
+- Secondary-agent selection: probability `0.36`, sample `0.8407348277978599`, selected `false`; no second agent was expected on this run.
+- Browser capture again returned Agent Router pricing HTTP 200, DeepWiki HTTP 429, and MCP endpoint HTTP 200. The sanitized HAR contained 44 entries; SHA-256 `7cc6449acec7a05f42376525de183c6ee085207732c3af665a85cfaf4b293bf8`.
+- Artifact: [agent-router-evidence-43247478709](https://github.com/evanbrown3000/OmniRoute-evan/actions/runs/43247478709/artifacts/13958305984). The ZIP again contains only `agent-router-sanitized.har`; the intended index, MCP trace, and native-task receipt are absent. This confirms the evidence-packaging defect is repeatable, not a one-off.
+- The same A2A capability-discovery probe ran; no paid data operation was invoked. No new substantive cross-platform research result was produced.
+- Follow-up: close this same-task continuation. The next assignment should remove the completed `RESUME_TASK` directive and dispatch a genuinely new primary native agent, with a new provider task ID. Keep the receipt/index/trace packaging gap open until verified fixed in a permitted infrastructure change.
