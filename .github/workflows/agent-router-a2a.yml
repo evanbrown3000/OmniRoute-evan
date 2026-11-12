@@ -7,6 +7,7 @@ on:
   push:
     branches:
       - release/v3.8.54
+      - agent-router-a2a-sanitized-20261112
     paths:
       - ".github/workflows/agent-router-a2a.yml"
       - "docs/agent-execution/current-task.md"
@@ -42,10 +43,10 @@ jobs:
           import { chromium } from "playwright";
           import fs from "node:fs";
 
-          const harPath = `${process.env.RUNNER_TEMP}/agent-router.har`;
+          const harPath = `${process.env.RUNNER_TEMP}/agent-router.raw.har`;
           const browser = await chromium.launch({ headless: true });
           const context = await browser.newContext({
-            recordHar: { path: harPath, mode: "full", content: "embed" }
+            recordHar: { path: harPath, mode: "minimal", content: "omit" }
           });
           const page = await context.newPage();
           let pricingStatus = null;
@@ -61,7 +62,7 @@ jobs:
               timeout: 30000
             });
             pricingStatus = pricing?.status() ?? null;
-            pricingUrl = page.url();
+            pricingUrl = sanitizeUrl(page.url());
             pricingTitle = await page.title();
             pricingText = (await page.locator("body").innerText().catch(() => "")).slice(0, 2500);
 
@@ -75,8 +76,8 @@ jobs:
                   timeout: 30000
                 });
                 deepwikiPages.push({
-                  url,
-                  finalUrl: page.url(),
+                  url: sanitizeUrl(url),
+                  finalUrl: sanitizeUrl(page.url()),
                   status: response?.status() ?? null,
                   title: await page.title(),
                   excerpt: (await page.locator("body").innerText().catch(() => "")).slice(0, 1800)
@@ -162,10 +163,21 @@ jobs:
           }
 
           const har = JSON.parse(fs.readFileSync(harPath, "utf8"));
+          const sanitizeUrl = value => {
+            try {
+              const url = new URL(value);
+              url.search = "";
+              url.hash = "";
+              url.pathname = url.pathname.split("/").map(segment =>
+                /^[a-f0-9-]{24,}$/i.test(segment) || /^[A-Za-z0-9_-]{40,}$/.test(segment) ? ":redacted" : segment
+              ).join("/");
+              return url.toString();
+            } catch { return "<redacted>"; }
+          };
           const requests = har.log.entries
             .map(entry => ({
               method: entry.request.method,
-              url: entry.request.url,
+              url: sanitizeUrl(entry.request.url),
               status: entry.response.status
             }))
             .filter(entry => /agent-router|mcp-http|a2a/i.test(entry.url))
@@ -497,11 +509,93 @@ jobs:
           );
           NODE
 
-      - name: Retain browser HAR artifact
+      - name: Sanitize browser HAR for retention
+        if: always()
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+          import { createHash } from "node:crypto";
+          const rawPath = `${process.env.RUNNER_TEMP}/agent-router.raw.har`;
+          const safePath = `${process.env.RUNNER_TEMP}/agent-router.har`;
+          if (!fs.existsSync(rawPath)) {
+            console.log("SANITIZED_HAR_STATUS=missing");
+            process.exit(0);
+          }
+          const raw = JSON.parse(fs.readFileSync(rawPath, "utf8"));
+          const sanitizeUrl = value => {
+            try {
+              const url = new URL(value);
+              url.search = "";
+              url.hash = "";
+              url.pathname = url.pathname.split("/").map(segment =>
+                /^[a-f0-9-]{24,}$/i.test(segment) || /^[A-Za-z0-9_-]{40,}$/.test(segment) ? ":redacted" : segment
+              ).join("/");
+              return url.toString();
+            } catch { return "https://redacted.invalid/"; }
+          };
+          const entries = (raw.log?.entries ?? []).map(entry => ({
+            startedDateTime: entry.startedDateTime,
+            time: Number(entry.time ?? -1),
+            request: {
+              method: String(entry.request?.method ?? "UNKNOWN"),
+              url: sanitizeUrl(entry.request?.url ?? ""),
+              httpVersion: String(entry.request?.httpVersion ?? ""),
+              headers: [], queryString: [], cookies: [], headersSize: -1, bodySize: -1
+            },
+            response: {
+              status: Number(entry.response?.status ?? 0),
+              statusText: String(entry.response?.statusText ?? ""),
+              httpVersion: String(entry.response?.httpVersion ?? ""),
+              headers: [], cookies: [],
+              content: {
+                size: Number(entry.response?.content?.size ?? 0),
+                mimeType: String(entry.response?.content?.mimeType ?? "")
+              },
+              redirectURL: "", headersSize: -1, bodySize: -1
+            },
+            cache: {},
+            timings: {
+              send: Number(entry.timings?.send ?? -1),
+              wait: Number(entry.timings?.wait ?? -1),
+              receive: Number(entry.timings?.receive ?? -1)
+            }
+          })).filter(entry => {
+            try {
+              const host = new URL(entry.request.url).hostname;
+              return host === "agent-router.org" || host.endsWith(".agent-router.org") ||
+                host === "deepwiki.com" || host.endsWith(".deepwiki.com") ||
+                host === "social.duoleads.com" || host.endsWith(".social.duoleads.com");
+            } catch { return false; }
+          });
+          const sanitized = {
+            log: {
+              version: String(raw.log?.version ?? "1.2"),
+              creator: { name: "OmniRoute sanitized HAR", version: "1" },
+              entries
+            }
+          };
+          fs.writeFileSync(safePath, JSON.stringify(sanitized));
+          fs.rmSync(rawPath, { force: true });
+          const digest = createHash("sha256").update(fs.readFileSync(safePath)).digest("hex");
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,
+            "## Sanitized browser HAR\n\n" +
+            "- Path: `agent-router.har`\n" +
+            "- Entries: " + entries.length + "\n" +
+            "- SHA-256: `" + digest + "`\n" +
+            "- Retained: method, sanitized URL, status, MIME type, timing.\n" +
+            "- Removed: headers, cookies, query strings, URL fragments, request/response bodies and long identifier path segments.\n"
+          );
+          console.log("SANITIZED_HAR_EVIDENCE=" + JSON.stringify({
+            path: safePath, entries: entries.length, sha256: digest,
+            removed: ["headers","cookies","query strings","URL fragments","request/response bodies","long identifier path segments"]
+          }));
+          NODE
+
+      - name: Retain sanitized browser HAR artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: agent-router-browser-har-${{ github.run_id }}
+          name: agent-router-sanitized-har-${{ github.run_id }}
           path: ${{ runner.temp }}/agent-router.har
-          if-no-files-found: warn
+          if-no-files-found: ignore
           retention-days: 7
