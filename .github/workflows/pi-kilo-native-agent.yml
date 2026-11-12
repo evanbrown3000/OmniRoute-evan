@@ -103,29 +103,36 @@ jobs:
           REQUEST_PATH: ${{ steps.request.outputs.path }}
         run: |
           set -euo pipefail
-          CANDIDATE_BRANCH="agent-router-a2a-20261112-06"
-          CANDIDATE_REF="refs/remotes/origin/$CANDIDATE_BRANCH"
+          CANDIDATE_BRANCHES="agent-router-a2a-20261112-06 agent-router-a2a-20261113-01"
           BASELINE_SHA="$EVENT_SHA"
-          git fetch --no-tags origin "+refs/heads/$CANDIDATE_BRANCH:$CANDIDATE_REF"
-          CANDIDATE_SHA="$(git rev-parse "$CANDIDATE_REF")"
-          export CANDIDATE_SHA
-          mkdir -p "$RUNNER_TEMP/pi-kilo/review/baseline" "$RUNNER_TEMP/pi-kilo/review/candidate"
+          git fetch --no-tags origin \
+            "+refs/heads/agent-router-a2a-20261112-06:refs/remotes/origin/agent-router-a2a-20261112-06" \
+            "+refs/heads/agent-router-a2a-20261113-01:refs/remotes/origin/agent-router-a2a-20261113-01"
+          mkdir -p "$RUNNER_TEMP/pi-kilo/review/baseline"
           git archive "$BASELINE_SHA" | tar -x -C "$RUNNER_TEMP/pi-kilo/review/baseline"
-          git archive "$CANDIDATE_REF" | tar -x -C "$RUNNER_TEMP/pi-kilo/review/candidate"
-          git diff --stat "$BASELINE_SHA" "$CANDIDATE_REF" > "$RUNNER_TEMP/pi-kilo/review/diff-stat.txt"
-          git diff --name-status "$BASELINE_SHA" "$CANDIDATE_REF" > "$RUNNER_TEMP/pi-kilo/review/diff-names.txt"
-          git diff --no-ext-diff "$BASELINE_SHA" "$CANDIDATE_REF" > "$RUNNER_TEMP/pi-kilo/review/diff.patch"
+          for CANDIDATE_BRANCH in $CANDIDATE_BRANCHES; do
+            CANDIDATE_REF="refs/remotes/origin/$CANDIDATE_BRANCH"
+            CANDIDATE_DIR="$RUNNER_TEMP/pi-kilo/review/candidate-$CANDIDATE_BRANCH"
+            mkdir -p "$CANDIDATE_DIR"
+            git archive "$CANDIDATE_REF" | tar -x -C "$CANDIDATE_DIR"
+            git diff --stat "$BASELINE_SHA" "$CANDIDATE_REF" > "$RUNNER_TEMP/pi-kilo/review/diff-stat-$CANDIDATE_BRANCH.txt"
+            git diff --name-status "$BASELINE_SHA" "$CANDIDATE_REF" > "$RUNNER_TEMP/pi-kilo/review/diff-names-$CANDIDATE_BRANCH.txt"
+            git diff --no-ext-diff "$BASELINE_SHA" "$CANDIDATE_REF" > "$RUNNER_TEMP/pi-kilo/review/diff-$CANDIDATE_BRANCH.patch"
+          done
+          export CANDIDATE_BRANCHES
           python - <<'PY'
-          import json, os, pathlib
+          import json, os, pathlib, subprocess
           request = json.loads(pathlib.Path(os.environ["REQUEST_PATH"]).read_text(encoding="utf-8"))
           baseline_sha = os.environ["EVENT_SHA"]
-          candidate_sha = os.environ["CANDIDATE_SHA"]
-          lines = [
-              f"Baseline: release/v3.8.54@{baseline_sha}",
-              f"Candidate: agent-router-a2a-20261112-06@{candidate_sha}",
+          lines = [f"Baseline: release/v3.8.54@{baseline_sha}"]
+          for branch in os.environ["CANDIDATE_BRANCHES"].split():
+              ref = f"refs/remotes/origin/{branch}"
+              sha = subprocess.check_output(["git", "rev-parse", ref], text=True).strip()
+              lines.append(f"Candidate: {branch}@{sha}")
+          lines.extend([
               f"Parent workflow run: {request['parent_workflow_run_id']}",
               f"Parent native task: {request['parent_native_task_id']}",
-          ]
+          ])
           (pathlib.Path(os.environ["RUNNER_TEMP"]) / "pi-kilo" / "review" / "branches.txt").write_text(
               "\n".join(lines) + "\n", encoding="utf-8"
           )
@@ -151,7 +158,15 @@ jobs:
           import json, os, pathlib
           request = json.loads(pathlib.Path(os.environ["REQUEST_PATH"]).read_text(encoding="utf-8"))
           root = pathlib.Path(os.environ["RUNNER_TEMP"]) / "pi-kilo"
-          prompt = request["prompt"] + "\n\nRead-only source snapshots are available at:\n- " + str(root / "review" / "baseline") + "\n- " + str(root / "review" / "candidate") + "\n- " + str(root / "review" / "diff.patch") + "\n\nUse the read, grep, find and ls tools only. Do not modify files."
+          branches = ["agent-router-a2a-20261112-06", "agent-router-a2a-20261113-01"]
+          snapshots = [f"- baseline release/v3.8.54: {root / 'review' / 'baseline'}"]
+          for branch in branches:
+              snapshots.extend([
+                  f"- candidate {branch}: {root / 'review' / ('candidate-' + branch)}",
+                  f"- exact tree diff {branch}: {root / 'review' / ('diff-' + branch + '.patch')}",
+                  f"- diff stat {branch}: {root / 'review' / ('diff-stat-' + branch + '.txt')}",
+              ])
+          prompt = request["prompt"] + "\n\nRead-only source snapshots are available at:\n" + "\n".join(snapshots) + "\n- immutable snapshot receipt: " + str(root / "review" / "branches.txt") + "\n\nUse the read, grep, find and ls tools only. Do not modify files."
           (root / "prompt.txt").write_text(prompt, encoding="utf-8")
           PY
           set +e
