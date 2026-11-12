@@ -2,6 +2,8 @@ name: One-shot cross-platform agent review
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "35 7 * * *"
   push:
     branches:
       - release/v3.8.54
