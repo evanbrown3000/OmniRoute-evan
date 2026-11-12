@@ -160,7 +160,7 @@ jobs:
           const toolsResponse = await rpc("tools/list", {}, 1);
           const toolSpecs = toolsResponse.parsed?.result?.tools ?? [];
           const toolNames = toolSpecs.map(tool => tool.name);
-          const selectedNames = ["softwareengineeringexpert", "reasoningdelegationhigh"];
+          const selectedNames = ["softwareengineeringexpert", "researchagent"];
           const selectedSpecs = toolSpecs.filter(tool => selectedNames.includes(tool.name));
           console.log("AGENT_TOOL_SCHEMAS=" + JSON.stringify(selectedSpecs.map(tool => ({
             name: tool.name,
@@ -282,7 +282,7 @@ jobs:
             let taskId = result?.structuredContent?.task_id
               || result?.task_id
               || result?.task?.id
-              || responseText.match(/task[_ -]?id\\s*[:=]\\s*([A-Za-z0-9._:-]+)/i)?.[1]
+              || responseText.match(/\bTASK[_ -]?ID\s*[:=]\s*([A-Za-z0-9._:-]+)/i)?.[1]
               || null;
             const readState = value => String(
               value?.structuredContent?.state ??
@@ -291,7 +291,7 @@ jobs:
               value?.status ??
               ""
             ).toUpperCase();
-            let state = readState(result) || responseText.match(/STATUS:\\s*([A-Z_-]+)/i)?.[1]?.toUpperCase() || "";
+            let state = readState(result) || responseText.match(/\bSTATUS\s*[:=]\s*([A-Z_-]+)/i)?.[1]?.toUpperCase() || "";
             const pending = value => /RUNNING|IN_PROGRESS|QUEUED|PENDING|WAITING|INPUT_REQUIRED/.test(
               readState(value) + " " + extractText(value)
             );
@@ -306,18 +306,19 @@ jobs:
                 }, id + 100, 310000);
                 result = waited.parsed?.result ?? waited.parsed;
                 responseText = extractText(result);
-                state = readState(result) || responseText.match(/STATUS:\\s*([A-Z_-]+)/i)?.[1]?.toUpperCase() || state;
+                state = readState(result) || responseText.match(/\bSTATUS\s*[:=]\s*([A-Z_-]+)/i)?.[1]?.toUpperCase() || state;
               }
             }
             const isPending = /RUNNING|IN_PROGRESS|QUEUED|PENDING|WAITING|INPUT_REQUIRED/.test(
               state + " " + responseText
             );
             const failed = Boolean(result?.isError || initial.parsed?.isError || initial.parsed?.error)
-              || /STATUS:\\s*(FAILED|ERROR|CANCELLED|TIMED_OUT)|\\b(ERROR|FAILED)\\b/i.test(responseText)
+              || /\bSTATUS\s*[:=]\s*(FAILED|ERROR|CANCELLED|TIMED_OUT)|\b(ERROR|FAILED)\b/i.test(responseText)
               || /^(FAILED|ERROR|CANCELLED|TIMED_OUT)$/.test(state);
-            const explicitComplete = /STATUS:\\s*(COMPLETED|SUCCESS|SUCCEEDED|DONE)/i.test(responseText)
+            const explicitComplete = /\bSTATUS\s*[:=]\s*(COMPLETED|SUCCESS|SUCCEEDED|DONE)/i.test(responseText)
               || /^(COMPLETED|SUCCESS|SUCCEEDED|DONE)$/.test(state);
-            const isComplete = !failed && !isPending && explicitComplete;
+            const relevant = /OmniRoute|A2A|MCP|browser|HAR|provider|remote execution|AgentBridge|VNC|CDP/i.test(responseText);
+            const isComplete = !failed && !isPending && explicitComplete && relevant && responseText.length > 200;
             return {
               name,
               status: isComplete ? "completed" : failed ? "failed" : "incomplete",
