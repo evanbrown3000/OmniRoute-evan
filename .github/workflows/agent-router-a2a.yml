@@ -7,6 +7,7 @@ on:
   push:
     branches:
       - release/v3.8.54
+      - agent-router-a2a-20261112-05
     paths:
       - ".github/workflows/agent-router-a2a.yml"
       - "docs/agent-execution/current-task.md"
@@ -41,6 +42,7 @@ jobs:
           node --input-type=module <<'NODE'
           import { chromium } from "playwright";
           import fs from "node:fs";
+          import { createHash } from "node:crypto";
 
           const harPath = `${process.env.RUNNER_TEMP}/agent-router.har`;
           const browser = await chromium.launch({ headless: true });
@@ -162,10 +164,18 @@ jobs:
           }
 
           const har = JSON.parse(fs.readFileSync(harPath, "utf8"));
+          const safeUrl = value => {
+            try {
+              const url = new URL(value);
+              return url.origin + url.pathname;
+            } catch {
+              return String(value ?? "").split(/[?#]/, 1)[0];
+            }
+          };
           const requests = har.log.entries
             .map(entry => ({
               method: entry.request.method,
-              url: entry.request.url,
+              url: safeUrl(entry.request.url),
               status: entry.response.status
             }))
             .filter(entry => /agent-router|mcp-http|a2a/i.test(entry.url))
@@ -182,7 +192,9 @@ jobs:
           }));
 
           const endpoint = "https://agent-router.org/mcp-http/mcp";
+          const mcpTrace = [];
           const rpc = async (method, params, id, timeoutMs = 120000) => {
+            const startedAt = Date.now();
             const response = await fetch(endpoint, {
               method: "POST",
               headers: {
@@ -202,11 +214,49 @@ jobs:
                 try { parsed = JSON.parse(dataLine.slice(5).trim()); } catch {}
               }
             }
+            const result = parsed?.result ?? parsed;
+            const responseText = (result?.content ?? [])
+              .filter(item => item.type === "text")
+              .map(item => item.text)
+              .join("\n");
+            const taskId = result?.structuredContent?.task_id
+              || result?.structuredContent?.taskId
+              || result?.structuredContent?.task?.id
+              || result?.task_id
+              || result?.taskId
+              || result?.task?.id
+              || responseText.match(/\bTASK[_ -]?ID\s*[:=]\s*([A-Za-z0-9._:-]+)/i)?.[1]
+              || params?.arguments?.task_id
+              || null;
+            const state = String(
+              result?.structuredContent?.state
+              || result?.structuredContent?.status
+              || result?.state
+              || result?.status
+              || responseText.match(/\bSTATUS\s*[:=]\s*([A-Z_-]+)/i)?.[1]
+              || ""
+            ).toUpperCase();
+            mcpTrace.push({
+              at: new Date(startedAt).toISOString(),
+              durationMs: Date.now() - startedAt,
+              url: endpoint,
+              jsonrpcId: id,
+              method,
+              toolName: params?.name ?? null,
+              httpStatus: response.status,
+              taskId,
+              state,
+              requestSha256: createHash("sha256").update(JSON.stringify({ method, params })).digest("hex"),
+              responseSha256: createHash("sha256").update(raw).digest("hex"),
+              toolNames: method === "tools/list" ? (result?.tools ?? []).map(tool => tool.name) : undefined
+            });
             if (!response.ok) {
-              throw new Error(`MCP HTTP ${response.status}: ${raw.slice(0, 1200)}`);
+              throw new Error("MCP HTTP " + response.status + ": " +
+                String(parsed?.error?.message ?? "provider endpoint rejected request").slice(0, 300));
             }
             if (parsed?.error) {
-              throw new Error(`MCP ${method} error: ${JSON.stringify(parsed.error).slice(0, 1200)}`);
+              throw new Error("MCP " + method + " error: " +
+                String(parsed.error.message ?? "tool error").slice(0, 300));
             }
             return { status: response.status, parsed, raw };
           };
@@ -214,44 +264,52 @@ jobs:
           const toolsResponse = await rpc("tools/list", {}, 1);
           const toolSpecs = toolsResponse.parsed?.result?.tools ?? [];
           const toolNames = toolSpecs.map(tool => tool.name);
-          const primaryName = toolNames.includes("softwareengineeringexpert")
-            ? "softwareengineeringexpert"
-            : toolNames.includes("researchagent")
-              ? "researchagent"
-              : null;
-          if (!primaryName) {
-            throw new Error("Agent Router did not advertise a supported native agent tool.");
-          }
-          const secondaryCandidates = [
-            "researchagent",
-            "taskplanner",
-            "reasoningdelegationhigh",
-            "browsernavigationagent"
-          ].filter(name => name !== primaryName && toolNames.includes(name));
-          const secondaryName = secondaryCandidates[0] ?? null;
-          const candidateNames = [primaryName, ...secondaryCandidates];
-          const selectedNames = [primaryName];
-          const additionalAgentPrompted = Math.random() < 0.36;
-          if (additionalAgentPrompted && secondaryName) {
-            selectedNames.push(secondaryName);
-          }
-          console.log("ADDITIONAL_AGENT_PROMPT=" + JSON.stringify({
-            probability: 0.36,
-            selected: additionalAgentPrompted,
-            tool: selectedNames[1] ?? null
-          }));
-          const selectedSpecs = toolSpecs.filter(tool => candidateNames.includes(tool.name));
-          console.log("AGENT_TOOL_SCHEMAS=" + JSON.stringify(selectedSpecs.map(tool => ({
-            name: tool.name,
-            inputSchema: tool.inputSchema
-          }))));
-
           const taskUrl = `https://raw.githubusercontent.com/${process.env.GITHUB_REPOSITORY}/${process.env.GITHUB_SHA}/docs/agent-execution/current-task.md`;
           const taskResponse = await fetch(taskUrl, { signal: AbortSignal.timeout(15000) });
           if (!taskResponse.ok) {
             throw new Error(`Unable to load the current agent task: HTTP ${taskResponse.status}`);
           }
           const currentTask = await taskResponse.text();
+
+          const requestId = currentTask.match(/Request ID:\s*[^A-Za-z0-9]*([A-Za-z0-9._:-]+)/i)?.[1]
+            ?? process.env.GITHUB_SHA;
+          const selectionKey = requestId;
+          const primaryName = [
+            "softwareengineeringexpert",
+            "researchagent",
+            "reasoningdelegationhigh",
+            "constructivecritic",
+            "firstprinciplesanalyst",
+            "taskplanner"
+          ].find(name => toolNames.includes(name));
+          if (!primaryName) throw new Error("Agent Router did not advertise a supported native agent tool.");
+          const secondaryCandidates = [
+            "reasoningdelegationhigh",
+            "researchagent",
+            "taskplanner",
+            "browsernavigationagent"
+          ].filter(name => name !== primaryName && toolNames.includes(name));
+          const secondaryName = secondaryCandidates[0] ?? null;
+          const candidateNames = [primaryName, ...secondaryCandidates];
+          const selectedNames = [primaryName];
+          const secondarySample = createHash("sha256")
+            .update(selectionKey)
+            .digest()
+            .readUInt32BE(0) / 0x100000000;
+          const additionalAgentPrompted = secondarySample < 0.36;
+          if (additionalAgentPrompted && secondaryName) selectedNames.push(secondaryName);
+          const selectedSpecs = toolSpecs.filter(tool => candidateNames.includes(tool.name));
+          console.log("ADDITIONAL_AGENT_PROMPT=" + JSON.stringify({
+            requestId,
+            probability: 0.36,
+            sample: secondarySample,
+            selected: additionalAgentPrompted && Boolean(secondaryName),
+            tool: selectedNames[1] ?? null
+          }));
+          console.log("AGENT_TOOL_SCHEMAS=" + JSON.stringify(selectedSpecs.map(tool => ({
+            name: tool.name,
+            inputSchema: tool.inputSchema
+          }))));
 
           const prompt = [
             "You are an independent software-systems architect and researcher. Review the verified OmniRoute implementation inventory below and provide a source-backed recommendation.",
@@ -438,7 +496,44 @@ jobs:
             };
           };
 
-          const results = [];
+          const resumeTasks = [...currentTask.matchAll(/^RESUME_TASK:\s*([^=\s]+)\s*=\s*([A-Za-z0-9._:-]+)/gmi)]
+            .map(match => ({ name: match[1].trim(), taskId: match[2].trim() }));
+          console.log("RESUME_TASKS_FOUND=" + JSON.stringify(resumeTasks));
+          const resumeTask = async ({ name, taskId }, index) => {
+            let state = "RUNNING";
+            let responseText = "";
+            let httpStatus = null;
+            for (let poll = 0; poll < 8; poll++) {
+              const waited = await rpc("tools/call", {
+                name: "wait_for_task",
+                arguments: { task_id: taskId, max_wait_seconds: 120 }
+              }, 500 + index * 100 + poll, 130000);
+              httpStatus = waited.status;
+              const result = waited.parsed?.result ?? waited.parsed;
+              responseText = extractText(result);
+              state = String(
+                result?.structuredContent?.task?.state
+                ?? result?.structuredContent?.state
+                ?? result?.structuredContent?.status
+                ?? result?.task?.state
+                ?? result?.state
+                ?? result?.status
+                ?? responseText.match(/STATUS:\s*([A-Z_-]+)/i)?.[1]
+                ?? state
+              ).toUpperCase();
+              const success = /^(COMPLETED|SUCCESS|SUCCEEDED|DONE)$/.test(state)
+                || /STATUS:\s*(COMPLETED|SUCCESS|SUCCEEDED|DONE)/i.test(responseText);
+              const failure = /^(FAILED|ERROR|CANCELLED|TIMED_OUT)$/.test(state)
+                || /STATUS:\s*(FAILED|ERROR|CANCELLED|TIMED_OUT)/i.test(responseText);
+              const pending = /RUNNING|IN_PROGRESS|QUEUED|PENDING|WAITING|INPUT_REQUIRED|STILL RUNNING/.test(state + " " + responseText.toUpperCase());
+              console.log("TASK_RESUME_POLL=" + JSON.stringify({ name, taskId, poll: poll + 1, state, success, failure, pending }));
+              if (success && !pending) return { name, status: "completed", taskId, state, httpStatus, response: responseText, waitedForTask: true };
+              if (failure && !pending) return { name, status: "failed", taskId, state, httpStatus, response: responseText, waitedForTask: true };
+            }
+            return { name, status: "incomplete", taskId, state, httpStatus, response: responseText, waitedForTask: true };
+          };
+
+          let results = [];
           const attemptedNames = new Set();
           const runCandidate = async (name, id) => {
             if (attemptedNames.has(name)) return;
@@ -449,6 +544,9 @@ jobs:
               results.push({ name, status: "failed", error: String(error).slice(0, 2000) });
             }
           };
+          if (resumeTasks.length) {
+            results = await Promise.all(resumeTasks.map((task, index) => resumeTask(task, index)));
+          } else {
           for (let index = 0; index < selectedNames.length; index++) {
             await runCandidate(selectedNames[index], 10 + index);
             const unresolved = results.filter(item => item.status === "incomplete" && item.taskId);
@@ -459,33 +557,75 @@ jobs:
               break;
             }
           }
+          }
+
           let completed = results.filter(item => item.status === "completed" && item.response?.length > 80);
           let unresolvedNativeTask = results.some(item => item.status === "incomplete" && item.taskId);
-          for (let index = 0; !completed.length && !unresolvedNativeTask && index < candidateNames.length; index++) {
+          for (let index = 0; !resumeTasks.length && !completed.length && !unresolvedNativeTask && index < candidateNames.length; index++) {
             const name = candidateNames[index];
             if (attemptedNames.has(name)) continue;
             await runCandidate(name, 30 + index);
             completed = results.filter(item => item.status === "completed" && item.response?.length > 80);
             unresolvedNativeTask = results.some(item => item.status === "incomplete" && item.taskId);
           }
+          const resumeDirectives = results
+            .filter(item => item.status === "incomplete" && item.taskId)
+            .map(item => "RESUME_TASK: " + item.name + " = " + item.taskId);
           if (unresolvedNativeTask) {
             console.log("NATIVE_TASK_STILL_PENDING_NO_DUPLICATE_FALLBACK=" + JSON.stringify(
               results.filter(item => item.status === "incomplete" && item.taskId)
                 .map(item => ({ name: item.name, taskId: item.taskId, state: item.state }))
             ));
+            console.log("RESUME_TASK_DIRECTIVES=" + JSON.stringify(resumeDirectives));
           }
-          if (!completed.length) {
-            throw new Error("No platform-native agent reached a verified terminal completion after all safe fallback options: " + JSON.stringify(results));
-          }
-
+          const executionFailed = !completed.length;
           const output = {
-            status: "completed",
+            status: executionFailed ? "failed" : unresolvedNativeTask ? "partial" : "completed",
+            requestId,
             provider: "Agent Router MCP platform agents and external A2A registry",
             results,
+            secondarySelection: {
+              probability: 0.36,
+              sample: secondarySample,
+              selected: additionalAgentPrompted,
+              tool: selectedNames[1] ?? null
+            },
+            resumeDirectives,
             advertisedTools: toolNames,
             discovery
           };
           console.log("NATIVE_AGENT_RESULT=" + JSON.stringify(output));
+          const receipt = {
+            schema: "cognilode.native-agent-turn-receipt.v1",
+            requestId,
+            runId: process.env.GITHUB_RUN_ID,
+            commitSha: process.env.GITHUB_SHA,
+            createdAt: new Date().toISOString(),
+            provider: "Agent Router MCP platform agents",
+            secondarySelection: output.secondarySelection,
+            results: results.map(item => ({
+              name: item.name,
+              status: item.status,
+              httpStatus: item.httpStatus ?? null,
+              taskId: item.taskId ?? null,
+              state: item.state ?? null,
+              waitedForTask: item.waitedForTask ?? false,
+              responseLength: item.response?.length ?? 0,
+              responseSha256: item.response
+                ? createHash("sha256").update(item.response).digest("hex")
+                : null
+            })),
+            resumeDirectives,
+            advertisedTools: toolNames
+          };
+          fs.writeFileSync(
+            process.env.RUNNER_TEMP + "/agent-router-native-task-receipt.json",
+            JSON.stringify(receipt, null, 2)
+          );
+          fs.writeFileSync(
+            process.env.RUNNER_TEMP + "/agent-router-mcp-trace.json",
+            JSON.stringify(mcpTrace, null, 2)
+          );
           fs.appendFileSync(
             process.env.GITHUB_STEP_SUMMARY,
             "## Native cross-platform agent execution\n\n" +
@@ -493,15 +633,201 @@ jobs:
               "- Status: " + (item.status ?? "failed") + "\n" +
               (item.taskId ? "- Native task ID: " + item.taskId + "\n" : "") +
               (item.response ? "\n" + item.response.slice(0, 12000) : "\n" + (item.error ?? "")) + "\n"
-            ).join("\n")
+            ).join("\n") +
+            (resumeDirectives.length
+              ? "\nResume directives:\n" + resumeDirectives.join("\n") + "\n"
+              : "")
           );
+          if (executionFailed) {
+            throw new Error("No platform-native agent reached verified terminal completion: " +
+              JSON.stringify(results.map(item => ({
+                name: item.name,
+                status: item.status,
+                taskId: item.taskId ?? null,
+                state: item.state ?? null,
+                error: item.error ?? null
+              }))));
+          }
           NODE
 
-      - name: Retain browser HAR artifact
+      - name: Sanitize browser HAR evidence
+        if: always()
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+          import { createHash } from "node:crypto";
+
+          const root = process.env.RUNNER_TEMP;
+          const source = root + "/agent-router.har";
+          const sourceExists = fs.existsSync(source);
+          const safeUrl = value => {
+            try {
+              const url = new URL(value);
+              return url.origin + url.pathname;
+            } catch {
+              return String(value ?? "").split(/[?#]/, 1)[0];
+            }
+          };
+          const digest = value => value
+            ? createHash("sha256").update(value).digest("hex")
+            : null;
+          const readBody = (container, field) => {
+            const body = container?.[field];
+            if (!body?.text) return "";
+            if (body.encoding === "base64") {
+              try { return Buffer.from(body.text, "base64").toString("utf8"); } catch { return ""; }
+            }
+            return body.text;
+          };
+          const parsePayload = raw => {
+            if (!raw) return null;
+            try { return JSON.parse(raw); } catch {
+              const dataLine = raw.split("\n").find(line => line.startsWith("data:"));
+              if (dataLine) {
+                try { return JSON.parse(dataLine.slice(5).trim()); } catch {}
+              }
+              return null;
+            }
+          };
+
+          const har = sourceExists ? JSON.parse(fs.readFileSync(source, "utf8")) : { log: { entries: [], pages: [] } };
+          const sanitizedEntries = [];
+          const indexEntries = [];
+          const pages = (har.log?.pages ?? []).map(page => ({
+            startedDateTime: page.startedDateTime,
+            id: page.id,
+            title: page.title,
+            pageTimings: page.pageTimings ?? {}
+          }));
+          for (const entry of har.log?.entries ?? []) {
+            const requestRaw = readBody(entry.request, "postData");
+            const responseRaw = readBody(entry.response, "content");
+            const requestPayload = parsePayload(requestRaw);
+            const responsePayload = parsePayload(responseRaw);
+            const result = responsePayload?.result ?? responsePayload;
+            const responseText = (result?.content ?? [])
+              .filter(item => item.type === "text")
+              .map(item => item.text)
+              .join("\n");
+            const taskId = result?.structuredContent?.task_id
+              || result?.structuredContent?.taskId
+              || result?.structuredContent?.task?.id
+              || result?.task_id
+              || result?.taskId
+              || result?.task?.id
+              || responseText.match(/\bTASK[_ -]?ID\s*[:=]\s*([A-Za-z0-9._:-]+)/i)?.[1]
+              || null;
+            const state = String(
+              result?.structuredContent?.state
+              || result?.structuredContent?.status
+              || result?.state
+              || result?.status
+              || responseText.match(/\bSTATUS\s*[:=]\s*([A-Z_-]+)/i)?.[1]
+              || ""
+            ).toUpperCase();
+            const toolList = requestPayload?.method === "tools/list"
+              ? (result?.tools ?? []).map(tool => ({
+                  name: tool.name,
+                  required: tool.inputSchema?.required ?? []
+                }))
+              : [];
+            const mimeType = entry.response?.content?.mimeType ?? null;
+            const url = safeUrl(entry.request?.url ?? "");
+            indexEntries.push({
+              startedDateTime: entry.startedDateTime ?? null,
+              method: entry.request?.method ?? null,
+              url,
+              status: entry.response?.status ?? null,
+              mimeType,
+              durationMs: entry.time ?? null,
+              jsonrpcMethod: requestPayload?.method ?? null,
+              jsonrpcId: requestPayload?.id ?? null,
+              toolName: requestPayload?.params?.name ?? null,
+              taskId,
+              state,
+              toolList,
+              requestBodySha256: digest(requestRaw),
+              responseBodySha256: digest(responseRaw)
+            });
+            sanitizedEntries.push({
+              startedDateTime: entry.startedDateTime,
+              time: entry.time,
+              request: {
+                method: entry.request?.method ?? "GET",
+                url,
+                httpVersion: entry.request?.httpVersion ?? "HTTP/1.1",
+                headers: [],
+                queryString: [],
+                cookies: [],
+                headersSize: -1,
+                bodySize: 0
+              },
+              response: {
+                status: entry.response?.status ?? 0,
+                statusText: entry.response?.statusText ?? "",
+                httpVersion: entry.response?.httpVersion ?? "HTTP/1.1",
+                headers: [],
+                cookies: [],
+                content: { size: 0, mimeType },
+                redirectURL: entry.response?.redirectURL ? safeUrl(entry.response.redirectURL) : "",
+                headersSize: -1,
+                bodySize: 0
+              },
+              cache: {},
+              timings: entry.timings ?? {}
+            });
+          }
+
+          const sanitizedHar = {
+            log: {
+              version: "1.2",
+              creator: { name: "OmniRoute sanitized evidence", version: "1" },
+              pages,
+              entries: sanitizedEntries
+            }
+          };
+          const sanitizedPath = root + "/agent-router-sanitized.har";
+          const indexPath = root + "/agent-router-har-index.json";
+          fs.writeFileSync(sanitizedPath, JSON.stringify(sanitizedHar));
+          const tracePath = root + "/agent-router-mcp-trace.json";
+          const receiptPath = root + "/agent-router-native-task-receipt.json";
+          const mcpTrace = fs.existsSync(tracePath)
+            ? JSON.parse(fs.readFileSync(tracePath, "utf8"))
+            : [];
+          const receipt = fs.existsSync(receiptPath)
+            ? JSON.parse(fs.readFileSync(receiptPath, "utf8"))
+            : null;
+          const index = {
+            schema: "cognilode.sanitized-har-index.v1",
+            createdAt: new Date().toISOString(),
+            sourceFile: sourceExists ? "agent-router.har" : null,
+            entryCount: indexEntries.length,
+            entries: indexEntries,
+            mcpTrace,
+            nativeTaskReceipt: receipt
+          };
+          fs.writeFileSync(indexPath, JSON.stringify(index, null, 2));
+          const sha256 = createHash("sha256")
+            .update(fs.readFileSync(sanitizedPath))
+            .digest("hex");
+          console.log("SANITIZED_HAR_EVIDENCE=" + JSON.stringify({
+            sourceExists,
+            entryCount: indexEntries.length,
+            sanitizedHar: "agent-router-sanitized.har",
+            index: "agent-router-har-index.json",
+            sha256
+          }));
+          NODE
+
+      - name: Retain sanitized browser HAR and native task evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: agent-router-browser-har-${{ github.run_id }}
-          path: ${{ runner.temp }}/agent-router.har
+          name: agent-router-evidence-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/agent-router-sanitized.har
+            ${{ runner.temp }}/agent-router-har-index.json
+            ${{ runner.temp }}/agent-router-mcp-trace.json
+            ${{ runner.temp }}/agent-router-native-task-receipt.json
           if-no-files-found: warn
           retention-days: 7
