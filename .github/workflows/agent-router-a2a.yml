@@ -65,7 +65,7 @@ jobs:
             pricingText = (await page.locator("body").innerText().catch(() => "")).slice(0, 2500);
 
             for (const url of [
-              "https://deepwiki.com/cheaper-inference/OmniRoute",
+              "https://deepwiki.com/diegosouzapw/OmniRoute",
               "https://deepwiki.com/evanbrown3000/OmniRoute-evan"
             ]) {
               try {
