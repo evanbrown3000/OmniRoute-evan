@@ -120,3 +120,21 @@ This is the current assignment. Earlier sections are historical context and must
 6. Return exact source paths, platform/tool names, native task IDs, terminal statuses, browser/HAR evidence, and one long-term promotion recommendation. Identify unavailable capabilities precisely.
 
 Constraints: public source and public documentation only; no account creation, password reuse, credential access/disclosure, quota or billing circumvention, paid provisioning, outreach, listings, revenue transfers, private-memory access, application-code changes, or internal tests. Do not claim a provider turn completed without provider-native terminal evidence.
+
+
+---
+
+## New direct-owner execution turn — 2026-11-12 — gpt6-20261112-omniroute-federation-05
+
+This is a fresh turn. Do not treat prior completed tasks or acknowledgements as this turn's execution.
+
+1. Use the existing GitHub-hosted Playwright workflow `.github/workflows/agent-router-a2a.yml` as the remote execution route. Do not use the user's personal computer.
+2. Capture a fresh browser HAR for the Agent Router public pricing surface, DeepWiki public documentation, and the Agent Router MCP endpoint. Retain only sanitized evidence; do not persist cookies, authorization headers, tokens, or private payloads.
+3. Discover the currently advertised native agent tools and schemas, then actually prompt at least one agent on a distinct platform. Preserve the 36% secondary-peer cadence already implemented in the workflow. If selected, execute the secondary turn and report its independent result.
+4. For any asynchronous task, persist the exact native task ID, poll that same ID, and independently read back the terminal state and response. Do not submit duplicate work while the task is pending. A queue acknowledgement, HTTP 2xx, model-only inference, or tool discovery is not completion.
+5. Give an independent top-down review of the existing federation: Pipeline, Work Episode, Networks, Accounts, ComputerUseX, LibreChat, B4PT0R, OmniRoute, and the current remote execution nodes. Identify the highest-value integration that increases completed cross-platform native turns while retaining one durable work authority.
+6. Research current public GitHub implementations and official provider documentation for heterogeneous A2A/MCP orchestration, durable agents, browser sessions, and remote compute. Compare actual native agent execution, model inference, browser capability, compute, account prerequisites, and verified recurring free capacity. Cite public source URLs; do not infer free capacity from a model catalog.
+7. Recommend the strongest existing implementation to promote, including exact source paths and the minimal owner-to-owner integration seam. Preserve existing fork-specific capabilities and use historical code only when its behavior is proven.
+8. Do not create accounts, collect or disclose credentials, reuse passwords, bypass identity verification, rate limits, quotas, or billing controls, provision paid resources, contact people, publish listings, transfer funds, access private memory-corpus contents, modify application code, or run internal tests. Keep all secrets and private metadata outside the public repository and external-agent prompts.
+
+Required final evidence: provider/platform; native tool name; native task ID (if returned); terminal state; independent readback; concise agent findings; browser HAR artifact and digest; observed backend methods/URLs/statuses; source-backed long-term recommendation; exact failures for any attempted but unsuccessful route.
