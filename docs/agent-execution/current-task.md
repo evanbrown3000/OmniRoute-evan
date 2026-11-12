@@ -1,9 +1,10 @@
 # OmniRoute federated native-agent execution — turn 11
 
-Request ID: gpt6-20261112-omniroute-evan-turn-11
+Request ID: gpt6-20261112-omniroute-federation-live-12-readback
+Prior request ID (historical): gpt6-20261112-omniroute-evan-turn-11
 TARGET_AGENT: taskplanner
 SECONDARY_AGENT: firstprinciplesanalyst
-EXPECTED_36_PERCENT_BUCKET: 9
+EXPECTED_36_PERCENT_BUCKET: 17
 
 ## Objective
 
@@ -57,3 +58,10 @@ Prefer existing, proven free-tier routes. Do not assume that model inference pro
 ## Required conclusion
 
 Recommend one long-term architecture and the strongest historical implementation to promote. Separate verified live execution from failed routes, inference-only calls, discovery, acknowledgements, and pending work. Identify the remaining owner integration required for durable WorkEpisode receipts and Pipeline-owned recurrence.
+
+
+## Independent readback of the release-branch native task
+
+The release-branch execution created TaskPlanner native task `a356742a-afb0-4f57-9d5d-f96a1e5634eb` and returned provider state `COMPLETED` without independently polling that ID. Do not submit a duplicate primary task. Resume this exact task ID and verify its provider-native terminal result. If the readback is terminal-successful, the deterministic secondary selection for this request (SHA-256 bucket 17 of 100) authorizes one independent `firstprinciplesanalyst` task. If the primary is pending or failed, do not start the secondary. Preserve the exact task IDs and provider-declared states.
+
+RESUME_TASK: taskplanner = a356742a-afb0-4f57-9d5d-f96a1e5634eb
