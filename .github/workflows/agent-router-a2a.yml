@@ -10,6 +10,7 @@ on:
 
 permissions:
   actions: write
+  contents: read
 
 jobs:
   agent-review:
@@ -17,8 +18,13 @@ jobs:
     container:
       image: mcr.microsoft.com/playwright:v1.65.0-resolute
       options: --ipc=host
-    timeout-minutes: 15
+    timeout-minutes: 45
     steps:
+      - name: Checkout current task definition
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
       - name: Install matching Playwright package
         run: |
           node --version
@@ -128,7 +134,7 @@ jobs:
           }));
 
           const endpoint = "https://agent-router.org/mcp-http/mcp";
-          const rpc = async (method, params, id, timeoutMs = 55000) => {
+          const rpc = async (method, params, id, timeoutMs = 55000, allowRpcError = false) => {
             const response = await fetch(endpoint, {
               method: "POST",
               headers: {
@@ -151,7 +157,7 @@ jobs:
             if (!response.ok) {
               throw new Error(`MCP HTTP ${response.status}: ${raw.slice(0, 1200)}`);
             }
-            if (parsed?.error) {
+            if (parsed?.error && !allowRpcError) {
               throw new Error(`MCP ${method} error: ${JSON.stringify(parsed.error).slice(0, 1200)}`);
             }
             return { status: response.status, parsed, raw };
@@ -221,8 +227,12 @@ jobs:
                 };
               }
               const required = schema.required ?? Object.keys(properties);
+              const included = [...new Set([
+                ...required,
+                ...Object.keys(properties).filter(child => properties[child]?.default !== undefined)
+              ])];
               const value = {};
-              for (const child of required) {
+              for (const child of included) {
                 if (properties[child]) value[child] = buildSchemaValue(properties[child], root, child, task, taskId);
               }
               return value;
@@ -271,6 +281,88 @@ jobs:
             return parts.filter(item => item.type === "text").map(item => item.text).join("\n")
               || JSON.stringify(result?.structuredContent ?? result ?? {});
           };
+
+          const readTaskState = value => String(
+            value?.structuredContent?.state ??
+            value?.structuredContent?.status ??
+            value?.structuredContent?.task?.status ??
+            value?.state ??
+            value?.status ??
+            value?.task?.status ??
+            ""
+          ).toUpperCase();
+
+          const currentTaskPath = process.env.GITHUB_WORKSPACE + "/docs/agent-execution/current-task.md";
+          const currentTaskText = fs.existsSync(currentTaskPath) ? fs.readFileSync(currentTaskPath, "utf8") : "";
+          const resumeTasks = [...currentTaskText.matchAll(/^RESUME_TASK:\s*([^=\s]+)\s*=\s*([0-9a-f-]+)/gmi)]
+            .map(match => ({ name: match[1].trim(), taskId: match[2].trim() }));
+          console.log("RESUME_TASKS_FOUND=" + JSON.stringify(resumeTasks));
+
+          const resumeTask = async ({ name, taskId }, index) => {
+            const waitSpec = toolSpecs.find(item => item.name === "wait_for_task");
+            if (!waitSpec) return { name, status: "failed", taskId, error: "Agent Router did not advertise wait_for_task" };
+
+            const waitArgs = buildArgs(waitSpec, prompt, taskId);
+            waitArgs.task_id = taskId;
+            waitArgs.max_wait_seconds = 300;
+
+            const deadline = Date.now() + 40 * 60 * 1000;
+            let attempt = 0;
+            let lastState = "RUNNING";
+            let lastResponse = "";
+
+            while (Date.now() < deadline) {
+              attempt++;
+              try {
+                const waited = await rpc(
+                  "tools/call",
+                  { name: "wait_for_task", arguments: waitArgs },
+                  1000 + index * 100 + attempt,
+                  310000,
+                  true
+                );
+                const result = waited.parsed?.result ?? waited.parsed;
+                lastResponse = extractText(result);
+                lastState = readTaskState(result) ||
+                  lastResponse.match(/\bSTATUS\s*[:=]\s*([A-Z_-]+)/i)?.[1]?.toUpperCase() ||
+                  lastState;
+
+                const stillRunning =
+                  /^(RUNNING|IN_PROGRESS|QUEUED|PENDING|WAITING|INPUT_REQUIRED)$/.test(lastState) ||
+                  /TIMEOUT:\s*Task .* is still running|Task .* is still running after/i.test(lastResponse);
+                const failed =
+                  /^(FAILED|ERROR|CANCELLED|TIMED_OUT)$/.test(lastState) ||
+                  /\bSTATUS\s*[:=]\s*(FAILED|ERROR|CANCELLED|TIMED_OUT)\b/i.test(lastResponse);
+                const completed =
+                  /^(COMPLETED|SUCCESS|SUCCEEDED|DONE)$/.test(lastState) ||
+                  /\bSTATUS\s*[:=]\s*(COMPLETED|SUCCESS|SUCCEEDED|DONE)\b/i.test(lastResponse);
+
+                if (failed && !stillRunning) {
+                  return { name, status: "failed", taskId, state: lastState, response: lastResponse };
+                }
+                if (completed && !stillRunning) {
+                  return { name, status: "completed", taskId, state: lastState, response: lastResponse };
+                }
+                if (result?.isError && !stillRunning) {
+                  return { name, status: "failed", taskId, state: lastState, response: lastResponse };
+                }
+
+                console.log("TASK_WAIT_CONTINUATION=" + JSON.stringify({
+                  name, taskId, attempt, state: lastState, stillRunning, responseLength: lastResponse.length
+                }));
+              } catch (error) {
+                const message = String(error);
+                if (!/still running|timeout|429|500|502|503|504|ECONNRESET|ETIMEDOUT/i.test(message)) {
+                  return { name, status: "failed", taskId, state: lastState, error: message.slice(0, 2000) };
+                }
+                console.log("TASK_WAIT_RETRY=" + JSON.stringify({ name, taskId, attempt, error: message.slice(0, 500) }));
+              }
+              await new Promise(resolve => setTimeout(resolve, 1500));
+            }
+
+            return { name, status: "pending", taskId, state: lastState, response: lastResponse };
+          };
+
 
           const callAgentTool = async (name, id) => {
             const spec = selectedSpecs.find(item => item.name === name);
@@ -329,19 +421,23 @@ jobs:
             };
           };
 
-          const results = [];
-          for (let index = 0; index < selectedNames.length; index++) {
-            const name = selectedNames[index];
-            try {
-              results.push(await callAgentTool(name, 10 + index));
-              if (results.at(-1)?.status === "completed") break;
-            } catch (error) {
-              results.push({ name, status: "failed", error: String(error).slice(0, 2000) });
+          let results = [];
+          if (resumeTasks.length) {
+            results = await Promise.all(resumeTasks.map((task, index) => resumeTask(task, index)));
+          } else {
+            for (let index = 0; index < selectedNames.length; index++) {
+              const name = selectedNames[index];
+              try {
+                results.push(await callAgentTool(name, 10 + index));
+                if (results.at(-1)?.status === "completed") break;
+              } catch (error) {
+                results.push({ name, status: "failed", error: String(error).slice(0, 2000) });
+              }
             }
           }
           const completed = results.filter(item => item.status === "completed" && item.response?.length > 80);
-          if (!completed.length) {
-            throw new Error("No platform-native agent completed: " + JSON.stringify(results));
+          if (!completed.length || results.some(item => item.status !== "completed")) {
+            throw new Error("Native platform-agent tasks did not all reach verified completion: " + JSON.stringify(results));
           }
 
           const output = {
