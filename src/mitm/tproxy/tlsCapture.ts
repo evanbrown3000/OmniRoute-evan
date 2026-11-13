@@ -29,8 +29,7 @@ import net from "node:net";
 import tls from "node:tls";
 import { randomUUID } from "node:crypto";
 import { sanitizeErrorMessage } from "@omniroute/open-sse/utils/error";
-import { sanitizeHeaders } from "../sanitizeHeaders.ts";
-import { maskSecret } from "../maskSecrets.ts";
+import { captureHeaders } from "../captureHeaders.ts";
 import { MITM_IDLE_TIMEOUT_MS } from "../socketTimeouts.ts";
 import { globalTrafficBuffer } from "../inspector/buffer.ts";
 import type { InterceptedRequest } from "../inspector/types.ts";
@@ -169,7 +168,7 @@ export function handleDecryptedRequest(
     method: req.method ?? "GET",
     host,
     path,
-    requestHeaders: sanitizeHeaders(req.headers),
+    requestHeaders: captureHeaders(req.headers),
     requestBody: null,
     requestSize: 0,
     responseHeaders: {},
@@ -184,7 +183,7 @@ export function handleDecryptedRequest(
     try {
       const body = await readBody(req);
       intercepted.requestSize = body.length;
-      intercepted.requestBody = body.length > 0 ? maskSecret(body.toString("utf8")) : null;
+      intercepted.requestBody = body.length > 0 ? body.toString("utf8") : null;
 
       const result = await deps.forward(
         { ip: dest.ip, port: dest.port, sni },
@@ -192,8 +191,8 @@ export function handleDecryptedRequest(
       );
 
       const totalLatencyMs = deps.now() - startedAt;
-      intercepted.responseHeaders = sanitizeHeaders(result.headers);
-      intercepted.responseBody = maskSecret(result.body.toString("utf8"));
+      intercepted.responseHeaders = captureHeaders(result.headers);
+      intercepted.responseBody = result.body.toString("utf8");
       intercepted.responseSize = result.body.length;
       intercepted.status = result.status;
       intercepted.totalLatencyMs = totalLatencyMs;

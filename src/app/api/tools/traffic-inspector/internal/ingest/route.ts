@@ -24,8 +24,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { randomUUID } from "node:crypto";
 import { InterceptedRequestSchema, type InterceptedRequest } from "@/mitm/inspector/types";
 import { globalTrafficBuffer } from "@/mitm/inspector/buffer";
-import { maskSecret } from "@/mitm/maskSecrets";
-import { sanitizeHeaders } from "@/mitm/sanitizeHeaders";
+import { captureHeaders } from "@/mitm/captureHeaders";
 
 // ── Token management ────────────────────────────────────────────────────────
 
@@ -120,10 +119,10 @@ export async function POST(request: Request): Promise<Response> {
       requestSize: data.requestSize,
       responseSize: data.responseSize,
       status: data.status,
-      requestHeaders: sanitizeHeaders(data.requestHeaders || {}),
-      responseHeaders: sanitizeHeaders(data.responseHeaders || {}),
-      requestBody: data.requestBody != null ? maskSecret(data.requestBody) : null,
-      responseBody: data.responseBody != null ? maskSecret(data.responseBody) : null,
+      requestHeaders: captureHeaders(data.requestHeaders || {}),
+      responseHeaders: captureHeaders(data.responseHeaders || {}),
+      requestBody: data.requestBody != null ? data.requestBody : null,
+      responseBody: data.responseBody != null ? data.responseBody : null,
     };
     globalTrafficBuffer.push(req);
     return Response.json({ ok: true, id: req.id }, { status: 200 });

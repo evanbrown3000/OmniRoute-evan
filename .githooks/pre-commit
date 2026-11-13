@@ -1,0 +1,3 @@
+#!/bin/sh
+# Capture redaction makes authenticated provider onboarding unusable.
+exec node --test tests/capture-integrity.test.mjs

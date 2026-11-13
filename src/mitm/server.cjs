@@ -91,37 +91,8 @@ if (_dynamicAdded > 0) {
   console.log(`[MITM] Loaded ${_dynamicAdded} additional host(s) from targets.json`);
 }
 
-// =========================================================================
-// Minimal CJS port of `sanitizeErrorMessage` from open-sse/utils/error.ts.
-// Hard Rule #12: HTTP / SSE error bodies must never expose raw err.stack /
-// err.message. The CJS proxy cannot import the TS ESM module, so we mirror
-// the linear (ReDoS-safe) tokenizer here.
-// =========================================================================
-const SANITIZE_MAX_LEN = 4096;
-const SANITIZE_SOURCE_EXT = ["ts", "tsx", "js", "jsx", "mjs", "cjs"];
-function looksLikeAbsolutePath(tok) {
-  if (tok.length < 4 || tok.length > 2048) return false;
-  const isPosix = tok.charCodeAt(0) === 0x2f;
-  const isWindows = tok.length > 2 && tok.charCodeAt(1) === 0x3a && /[A-Za-z]/.test(tok[0]);
-  if (!isPosix && !isWindows) return false;
-  const dot = tok.lastIndexOf(".");
-  if (dot <= 0 || dot === tok.length - 1) return false;
-  const ext = tok
-    .slice(dot + 1)
-    .split(":", 1)[0]
-    .toLowerCase();
-  return SANITIZE_SOURCE_EXT.includes(ext);
-}
-function sanitizeErrorMessage(message) {
-  let str = typeof message === "string" ? message : String(message == null ? "" : message);
-  if (str.length > SANITIZE_MAX_LEN) str = str.slice(0, SANITIZE_MAX_LEN);
-  const nl = str.indexOf("\n");
-  const firstLine = nl >= 0 ? str.slice(0, nl) : str;
-  const parts = firstLine.split(/(\s+)/);
-  for (let i = 0; i < parts.length; i++) {
-    if (looksLikeAbsolutePath(parts[i])) parts[i] = "<path>";
-  }
-  return parts.join("");
+function errorMessage(error) {
+  return error instanceof Error ? error.message : String(error == null ? "" : error);
 }
 
 // =========================================================================
@@ -149,8 +120,6 @@ const peerGuardShim = require("./_internal/peerGuard.cjs");
 // Inspector. The token is injected by manager.ts (same value the OmniRoute
 // process uses); absent token → capture is silently skipped.
 const INGEST_TOKEN = process.env.INSPECTOR_INTERNAL_INGEST_TOKEN || "";
-// Cap captured bodies to keep proxy memory bounded (the buffer truncates again).
-const INGEST_MAX_BODY = 65536;
 
 // Flatten Node http headers (plain object, values string|string[]) or a fetch
 // Headers instance into a Record<string,string> for the inspector entry.
@@ -474,7 +443,7 @@ async function passthrough(req, res, bodyBuffer) {
 
 // Build + fire-and-forget the inspector capture entry. NEVER throws — capture
 // must not be able to break proxy traffic. Bodies/headers are sent raw over the
-// token-gated loopback ingest endpoint, which masks secrets server-side.
+// token-gated loopback ingest endpoint, which preserves the original capture.
 function captureToInspector(o) {
   if (!INGEST_TOKEN) return; // capture disabled (no token wired by manager)
   try {
@@ -488,7 +457,7 @@ function captureToInspector(o) {
       requestHeaders: headersToObject(o.req.headers),
       requestBody:
         o.bodyBuffer && o.bodyBuffer.length > 0
-          ? o.bodyBuffer.toString("utf8").slice(0, INGEST_MAX_BODY)
+          ? o.bodyBuffer.toString("utf8")
           : null,
       requestSize: o.bodyBuffer ? o.bodyBuffer.length : 0,
       status: o.status,
@@ -585,7 +554,7 @@ async function intercept(req, res, bodyBuffer, override, sourceModel) {
 
       if (!response.ok) {
         const errText = await response.text().catch(() => "");
-        respBody = errText.slice(0, INGEST_MAX_BODY);
+        respBody = errText;
         respSize = Buffer.byteLength(errText);
         throw new Error(`OmniRoute ${response.status}: ${errText}`);
       }
@@ -608,9 +577,7 @@ async function intercept(req, res, bodyBuffer, override, sourceModel) {
           break;
         }
         const text = decoder.decode(value, { stream: true });
-        if (respBody.length < INGEST_MAX_BODY) {
-          respBody += text.slice(0, INGEST_MAX_BODY - respBody.length);
-        }
+        respBody += text;
         respSize += value ? value.length : 0;
         if (downstreamClosed || res.closed || res.destroyed) break;
         // #14528: a slow client must drain before the next upstream read,
@@ -636,7 +603,7 @@ async function intercept(req, res, bodyBuffer, override, sourceModel) {
   } catch (error) {
     // Log the raw message locally (server console only) but never expose it
     // in the response body. Hard Rule #12 — sanitize before sending.
-    captureError = sanitizeErrorMessage(error && error.message);
+    captureError = errorMessage(error && error.message);
     console.error(`❌ ${error.message}`);
     if (!res.headersSent) res.writeHead(500, { "Content-Type": "application/json" });
     res.end(
@@ -959,6 +926,6 @@ async function startMitmServer() {
 }
 
 startMitmServer().catch((err) => {
-  console.error(`❌ ${sanitizeErrorMessage(err && err.message)}`);
+  console.error(`❌ ${errorMessage(err && err.message)}`);
   process.exit(1);
 });

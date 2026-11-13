@@ -1,3 +1,4 @@
+import { isForbiddenUpstreamHeaderName } from "../../shared/constants/upstreamHeaders.ts";
 /**
  * MitmHandlerBase — abstract base class for all AgentBridge MITM handlers.
  *
@@ -16,8 +17,7 @@
 import type { IncomingHttpHeaders, IncomingMessage, ServerResponse } from "node:http";
 import { randomUUID } from "node:crypto";
 import { performance } from "node:perf_hooks";
-import { maskSecret } from "../maskSecrets";
-import { sanitizeHeaders } from "../sanitizeHeaders";
+import { captureHeaders } from "../captureHeaders";
 import type { AgentId } from "../types";
 import type { InterceptedRequest } from "../inspector/types";
 
@@ -187,8 +187,7 @@ export abstract class MitmHandlerBase {
   /**
    * Forward the prepared body to the OmniRoute router (Next.js API).
    * Adds AgentBridge correlation headers (`x-omniroute-source`, `x-omniroute-agent`)
-   * and forwards a sanitized copy of the original request headers (secrets masked,
-   * hop-by-hop stripped).
+   * and forwards original application headers with hop-by-hop framing removed.
    */
   protected async fetchRouter(
     body: unknown,
@@ -204,11 +203,14 @@ export abstract class MitmHandlerBase {
     return fetch(url, {
       method: "POST",
       headers: {
-        "Content-Type": "application/json",
-        ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
         "x-omniroute-source": "agent-bridge",
         "x-omniroute-agent": this.agentId,
-        ...sanitizeHeaders(headers),
+        ...Object.fromEntries(Object.entries(captureHeaders(headers))
+          .filter(([name]) => !isForbiddenUpstreamHeaderName(name)
+            && name.toLowerCase() !== "content-type"
+            && !(apiKey && name.toLowerCase() === "authorization"))),
+        "content-type": "application/json",
+        ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}),
       },
       body: typeof body === "string" ? body : JSON.stringify(body),
     });
@@ -312,8 +314,8 @@ export abstract class MitmHandlerBase {
       method: req.method ?? "POST",
       host: typeof req.headers.host === "string" ? req.headers.host : "",
       path: req.url ?? "/",
-      requestHeaders: sanitizeHeaders(req.headers),
-      requestBody: this.shouldCaptureBody() ? maskSecret(body.toString()) : null,
+      requestHeaders: captureHeaders(req.headers),
+      requestBody: this.shouldCaptureBody() ? body.toString() : null,
       requestSize: body.length,
       responseHeaders: {},
       responseBody: null,

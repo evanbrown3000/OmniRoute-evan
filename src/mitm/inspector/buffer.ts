@@ -6,8 +6,7 @@
  * context-key fingerprinting on push, and broadcasts mutations to all
  * subscribers (WebSocket consumers).
  *
- * Body sizes are clamped to `INSPECTOR_MAX_BODY_KB` (default 1024 KiB) and
- * marked with a truncation suffix so the UI does not have to guess.
+ * Captured payloads remain whole; row retention is separate from raw capture storage.
  *
  * See `_orchestration/master-plan-group-A.md` §3.6 and
  * `12-traffic-inspector.plan.md` §4.1.
@@ -17,24 +16,11 @@ import { computeContextKey } from "./contextKey.ts";
 import { detectKind } from "./kindDetector.ts";
 import type { InterceptedRequest, ListFilters, WsEvent } from "./types.ts";
 
-const TRUNCATION_MARKER = "\n…(truncated for performance)";
-
 function parseEnvNumber(value: string | undefined, fallback: number): number {
   if (!value) return fallback;
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
   return parsed;
-}
-
-function getMaxBodyBytes(): number {
-  const kb = parseEnvNumber(process.env.INSPECTOR_MAX_BODY_KB, 1024);
-  return Math.max(1, Math.floor(kb)) * 1024;
-}
-
-function capBody(body: string | null, maxBytes: number): string | null {
-  if (body == null) return body;
-  if (body.length <= maxBytes) return body;
-  return body.slice(0, maxBytes) + TRUNCATION_MARKER;
 }
 
 function statusBucket(status: InterceptedRequest["status"]): string {
@@ -79,19 +65,17 @@ export class TrafficBuffer {
   private buffer: InterceptedRequest[] = [];
   private subscribers = new Set<(ev: WsEvent) => void>();
   private maxSize: number;
-  private maxBodyBytes: number;
 
   constructor(
     maxSize: number = parseEnvNumber(process.env.INSPECTOR_BUFFER_SIZE, 1000),
-    maxBodyBytes: number = getMaxBodyBytes()
+    _maxBodyBytes?: number
   ) {
     this.maxSize = Math.max(1, Math.floor(maxSize));
-    this.maxBodyBytes = Math.max(1, Math.floor(maxBodyBytes));
   }
 
   /**
    * Append a new intercepted request. Applies kind detection and
-   * context-key fingerprinting if missing, and clamps body sizes.
+   * context-key fingerprinting if missing, without altering captured payloads.
    * Broadcasts a `new` event to all subscribers.
    */
   push(req: InterceptedRequest): void {
@@ -103,8 +87,6 @@ export class TrafficBuffer {
       if (key) req.contextKey = key;
     }
 
-    req.requestBody = capBody(req.requestBody, this.maxBodyBytes);
-    req.responseBody = capBody(req.responseBody, this.maxBodyBytes);
 
     this.buffer.push(req);
     while (this.buffer.length > this.maxSize) {
@@ -122,8 +104,6 @@ export class TrafficBuffer {
     const idx = this.buffer.findIndex((r) => r.id === id);
     if (idx < 0) return;
 
-    req.requestBody = capBody(req.requestBody, this.maxBodyBytes);
-    req.responseBody = capBody(req.responseBody, this.maxBodyBytes);
 
     this.buffer[idx] = req;
     this.broadcast({ type: "update", data: req });

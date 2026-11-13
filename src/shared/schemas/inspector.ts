@@ -28,9 +28,9 @@ export const InspectorAnnotationPutSchema = z.object({
   annotation: z.string().max(10_000),
 });
 
-// 1 MB cap — matches INSPECTOR_MAX_BODY_KB constant
+// Session persistence retains whole captured entries.
 export const InspectorSessionRequestAppendSchema = z.object({
-  payload: z.string().max(1_048_576),
+  payload: z.string(),
 });
 
 export const InspectorListQuerySchema = z.object({

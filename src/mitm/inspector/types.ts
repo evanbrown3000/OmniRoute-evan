@@ -15,7 +15,7 @@ export interface InterceptedRequest {
   host: string;
   path: string;
   requestHeaders: Record<string, string>;
-  requestBody: string | null; // masked
+  requestBody: string | null; // original captured body
   requestSize: number;
   responseHeaders: Record<string, string>;
   responseBody: string | null;

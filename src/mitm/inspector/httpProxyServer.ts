@@ -17,8 +17,7 @@ import http from "node:http";
 import net from "node:net";
 import { randomUUID } from "node:crypto";
 import { sanitizeErrorMessage } from "@omniroute/open-sse/utils/error";
-import { sanitizeHeaders } from "../sanitizeHeaders.ts";
-import { maskSecret } from "../maskSecrets.ts";
+import { captureHeaders } from "../captureHeaders.ts";
 import { applyIdleTimeout, MITM_IDLE_TIMEOUT_MS } from "../socketTimeouts.ts";
 import { globalTrafficBuffer } from "./buffer.ts";
 import type { InterceptedRequest } from "./types.ts";
@@ -43,14 +42,12 @@ export interface HttpProxyServerHandle {
  * Drops hop-by-hop fields via the existing denylist and coerces array values.
  */
 function buildFetchHeaders(raw: http.IncomingHttpHeaders): Record<string, string> {
-  // sanitizeHeaders applies upstream denylist + masks Authorization for buffer
-  // logging; here we want denylist only (so the upstream still sees the auth
-  // header). Reuse sanitizeHeaders with a separate masking pass for the buffer.
+  // Forwarding framing is separate from the lossless capture record.
   const out: Record<string, string> = {};
   for (const [name, value] of Object.entries(raw)) {
     if (value === undefined || value === null) continue;
     const lower = name.toLowerCase();
-    // Skip hop-by-hop / framing — same names sanitizeHeaders also drops.
+    // Skip hop-by-hop / framing — same names captureHeaders also drops.
     if (
       lower === "host" ||
       lower === "connection" ||
@@ -98,7 +95,7 @@ function handleHttp(req: http.IncomingMessage, res: http.ServerResponse): void {
     method: req.method ?? "GET",
     host: req.headers.host ?? "",
     path: req.url ?? "/",
-    requestHeaders: sanitizeHeaders(req.headers),
+    requestHeaders: captureHeaders(req.headers),
     requestBody: null,
     requestSize: 0,
     responseHeaders: {},
@@ -120,7 +117,7 @@ function handleHttp(req: http.IncomingMessage, res: http.ServerResponse): void {
 
       const body = await readBody(req);
       intercepted.requestSize = body.length;
-      intercepted.requestBody = body.length > 0 ? maskSecret(body.toString("utf8")) : null;
+      intercepted.requestBody = body.length > 0 ? body.toString("utf8") : null;
 
       const upstreamHeaders = buildFetchHeaders(req.headers);
       const upstream = await fetch(target.toString(), {
@@ -133,10 +130,10 @@ function handleHttp(req: http.IncomingMessage, res: http.ServerResponse): void {
       const respBuf = Buffer.from(await upstream.arrayBuffer());
       const totalLatencyMs = performance.now() - startedAt;
 
-      intercepted.responseHeaders = sanitizeHeaders(
+      intercepted.responseHeaders = captureHeaders(
         Object.fromEntries(upstream.headers) as Record<string, string>
       );
-      intercepted.responseBody = maskSecret(respBuf.toString("utf8"));
+      intercepted.responseBody = respBuf.toString("utf8");
       intercepted.responseSize = respBuf.length;
       intercepted.status = upstream.status;
       intercepted.totalLatencyMs = totalLatencyMs;
@@ -180,7 +177,7 @@ function handleConnect(req: http.IncomingMessage, clientSocket: net.Socket, head
     method: "CONNECT",
     host,
     path: `:${port}`,
-    requestHeaders: sanitizeHeaders(req.headers),
+    requestHeaders: captureHeaders(req.headers),
     requestBody: null,
     requestSize: 0,
     responseHeaders: {},

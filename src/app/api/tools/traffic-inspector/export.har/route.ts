@@ -4,7 +4,7 @@
  * Exports the entire (optionally filtered) traffic buffer as a HAR v1.2 file.
  * The Content-Disposition header triggers a browser download.
  *
- * Secrets are always masked in the export — see `toHar` implementation.
+ * Original credentials and bodies are preserved in the export.
  *
  * LOCAL_ONLY enforced by routeGuard.
  */

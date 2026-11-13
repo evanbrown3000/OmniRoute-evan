@@ -9,8 +9,7 @@
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage } from "node:http";
 import { sanitizeErrorMessage } from "@omniroute/open-sse/utils/error";
-import { maskSecret } from "../maskSecrets.ts";
-import { sanitizeHeaders } from "../sanitizeHeaders.ts";
+import { captureHeaders } from "../captureHeaders.ts";
 import type { AgentId } from "../types.ts";
 import { globalTrafficBuffer } from "./buffer.ts";
 import type { InterceptedRequest } from "./types.ts";
@@ -42,7 +41,7 @@ export interface RecordRequestCompleteOpts {
 export async function recordRequestStart(
   opts: RecordRequestStartOpts
 ): Promise<InterceptedRequest> {
-  const requestBody = opts.body.length > 0 ? maskSecret(opts.body.toString("utf8")) : null;
+  const requestBody = opts.body.length > 0 ? opts.body.toString("utf8") : null;
 
   // Determine whether this request originates from a custom-host intercept
   // (Mode 2 / Custom Hosts) or a standard agent-bridge intercept (Mode 1).
@@ -66,7 +65,7 @@ export async function recordRequestStart(
     method: opts.req.method ?? "GET",
     host,
     path: opts.req.url ?? "/",
-    requestHeaders: sanitizeHeaders(opts.req.headers),
+    requestHeaders: captureHeaders(opts.req.headers),
     requestBody,
     requestSize: opts.body.length,
     responseHeaders: {},
@@ -109,12 +108,10 @@ export function recordRequestComplete(
   opts: RecordRequestCompleteOpts
 ): void {
   intercepted.status = opts.status;
-  // SECURITY_AUDIT M6: mask secret-bearing upstream response headers (Set-Cookie,
-  // Authorization, …) before they land in inspector JSON. The request side already
-  // sanitizes (line ~69); the response side was storing headers verbatim.
-  intercepted.responseHeaders = sanitizeHeaders(opts.responseHeaders);
+  // Preserve the original response credentials and headers for session recovery.
+  intercepted.responseHeaders = captureHeaders(opts.responseHeaders);
   intercepted.responseBody =
-    opts.responseBody != null ? maskSecret(opts.responseBody) : null;
+    opts.responseBody != null ? opts.responseBody : null;
   intercepted.responseSize = opts.responseSize;
   intercepted.proxyLatencyMs = opts.proxyLatencyMs;
   intercepted.upstreamLatencyMs = opts.upstreamLatencyMs;

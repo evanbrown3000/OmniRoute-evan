@@ -50,7 +50,7 @@ test("entry fields match the spec", () => {
   assert.equal(e.timings.receive, 50);
 });
 
-test("Bearer tokens in headers are masked", () => {
+test("Bearer tokens in headers are retained", () => {
   const req = makeReq({
     requestHeaders: {
       "content-type": "application/json",
@@ -62,19 +62,16 @@ test("Bearer tokens in headers are masked", () => {
     (h) => h.name === "authorization"
   );
   assert.ok(authHeader);
-  // Either Bearer regex (authorization:\sBearer prefix) or sk-/long-token regex must mask the value
-  assert.ok(!authHeader.value.includes("supersecretvalueabc1234567890XYZ"));
-  assert.ok(authHeader.value.includes("…") || authHeader.value.includes("***"));
+  assert.equal(authHeader.value, req.requestHeaders.authorization);
 });
 
-test("sk- keys in bodies are masked", () => {
+test("sk- keys in bodies are retained", () => {
   const req = makeReq({
     requestBody: '{"key":"sk-abcdef1234567890ABCDEF"}',
   });
   const har = toHar([req]);
   const body = har.log.entries[0].request.postData?.text ?? "";
-  assert.ok(!body.includes("sk-abcdef1234567890ABCDEF"));
-  assert.match(body, /sk-abc/);
+  assert.equal(body, req.requestBody);
 });
 
 test("preserves _source custom property", () => {

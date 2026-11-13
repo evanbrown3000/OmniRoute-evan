@@ -1,3 +1,7 @@
+## Browser capture ownership
+
+The Traffic Inspector has a **HAR & browser state** tab in source. Captures retain original credentials and bodies, and the tab stores them in private Accounts. [Capture policy and setup](docs/browser-capture.md). Generic browser recording belongs to browser-automation; ChatGPT-specific HTTP/browser code belongs to chatgpt-backend-api. LibreChat owns orchestration. Raw private captures never belong in this public fork.
+
 <div align="center">
 
 <img src="./docs/screenshots/MainOmniRoute.png" alt="OmniRoute Dashboard" width="820"/>

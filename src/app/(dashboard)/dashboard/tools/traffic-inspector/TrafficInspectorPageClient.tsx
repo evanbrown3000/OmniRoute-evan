@@ -14,6 +14,7 @@ import { CaptureModesToolbar } from "./components/CaptureModesToolbar";
 import { TopBarControls } from "./components/TopBarControls";
 import { RequestStreamingList } from "./components/RequestStreamingList";
 import { DetailsPanel } from "./components/DetailsPanel";
+import { BrowserCapturePanel } from "./components/BrowserCapturePanel";
 import { HistoricSessionBanner } from "./components/session/HistoricSessionBanner";
 
 const BUFFER_MAX = 1000;
@@ -28,6 +29,7 @@ export function TrafficInspectorPageClient({
   purpose?: string;
 } = {}) {
   const t = useTranslations("trafficInspector");
+  const [activeTab, setActiveTab] = useState<"traffic" | "capture">("traffic");
   const [containerHeight, setContainerHeight] = useState(600);
   const listContainerRef = useRef<HTMLDivElement | null>(null);
   const [selectedRequest, setSelectedRequest] = useState<InterceptedRequest | null>(null);
@@ -114,11 +116,18 @@ export function TrafficInspectorPageClient({
         </div>
       )}
 
+      <div role="tablist" aria-label="Traffic inspector" className="flex gap-3 px-4 py-2">
+        <button role="tab" aria-selected={activeTab === "traffic"} onClick={() => setActiveTab("traffic")}>Traffic</button>
+        <button role="tab" aria-selected={activeTab === "capture"} onClick={() => setActiveTab("capture")}>HAR &amp; browser state</button>
+      </div>
+
       {/* Capture modes toolbar */}
       <div className="shrink-0 px-4 pt-4 pb-2">
         <CaptureModesToolbar customHostCount={0} />
       </div>
 
+      {activeTab === "capture" ? <BrowserCapturePanel recording={recorder.recording}
+        onStart={handleRecordStart} onStop={handleRecordStop} /> : <>
       {/* Historic session banner */}
       {filters.sessionId !== undefined && (
         <div className="shrink-0 px-4 pb-2">
@@ -219,6 +228,7 @@ export function TrafficInspectorPageClient({
           <DetailsPanel request={selectedRequest} allRequests={streamState.requests} />
         </div>
       </div>
+      </>}
     </div>
   );
 }

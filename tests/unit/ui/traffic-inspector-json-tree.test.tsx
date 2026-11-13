@@ -1,8 +1,7 @@
 // @vitest-environment jsdom
 //
 // The Traffic Inspector reads bodies through the kit JsonTree. The body may hold live credentials,
-// so the Mask toggle must keep every secret off the screen and out of every copy: values through
-// the tree's redact hook, keys before the tree sees them (a masked node keeps its key).
+// and must preserve them in the owner-facing display and copied values.
 import React from "react";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -31,8 +30,8 @@ function requestWith(requestBody: string) {
   return { requestBody, requestSize: requestBody.length } as InterceptedRequest;
 }
 
-describe("RequestBodyTab secret masking on the kit JsonTree", () => {
-  it("masks secret values on screen through the redact hook", () => {
+describe("RequestBodyTab original capture values on the kit JsonTree", () => {
+  it("shows original values on screen", () => {
     const { container } = render(
       <RequestBodyTab
         request={requestWith(
@@ -42,32 +41,32 @@ describe("RequestBodyTab secret masking on the kit JsonTree", () => {
     );
 
     expect(screen.getByRole("tree")).not.toBeNull();
-    expect(container.textContent).not.toContain("abc.def");
-    expect(container.textContent).not.toContain("sk-abc123");
+    expect(container.textContent).toContain("abc.def");
+    expect(container.textContent).toContain("sk-abc123");
     expect(container.textContent).toContain("plain");
-    expect(container.querySelectorAll('[data-tone="redacted"]')).toHaveLength(2);
+    expect(container.querySelectorAll('[data-tone="redacted"]')).toHaveLength(0);
   });
 
-  it("catches a secret the raw text hides behind a JSON escape", () => {
+  it("preserves a value represented by a JSON escape", () => {
     const { container } = render(
       <RequestBodyTab request={requestWith('{"token":"sk\\u002dabc123"}')} />
     );
 
-    expect(container.textContent).not.toContain("sk-abc123");
-    expect(container.querySelector('[data-tone="redacted"]')?.textContent).toBe("••••");
+    expect(container.textContent).toContain("sk-abc123");
+    expect(container.querySelector('[data-tone="redacted"]')).toBeNull();
   });
 
-  it("masks a secret used as an object key, which the hook leaves on screen", () => {
+  it("preserves original object keys", () => {
     const { container } = render(
       <RequestBodyTab request={requestWith(JSON.stringify({ "sk-abc123": { nested: 1 } }))} />
     );
 
-    expect(container.textContent).not.toContain("sk-abc123");
-    expect(container.textContent).toContain("••••");
+    expect(container.textContent).toContain("sk-abc123");
+    expect(container.textContent).not.toContain("••••");
     expect(container.textContent).toContain("nested");
   });
 
-  it("keeps masked secrets out of a copied ancestor, collapsed or not", async () => {
+  it("copies the complete original ancestor, collapsed or not", async () => {
     const { container } = render(
       <RequestBodyTab
         request={requestWith(JSON.stringify({ a: { b: { c: "Bearer deep.secret", d: "safe" } } }))}
@@ -78,21 +77,20 @@ describe("RequestBodyTab secret masking on the kit JsonTree", () => {
     fireEvent.click(container.querySelector('[data-action="copy-value"]') as HTMLElement);
     await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
     const copied = writeText.mock.calls[0][0] as string;
-    expect(copied).not.toContain("deep.secret");
+    expect(copied).toContain("deep.secret");
     expect(copied).toContain("safe");
-    expect(copied).toContain("••••");
+    expect(copied).not.toContain("••••");
   });
 
-  it("shows the real values once the secrets are unmasked, and masks the raw text", () => {
+  it("retains the same values in raw and formatted views", () => {
     const { container } = render(
       <RequestBodyTab request={requestWith(JSON.stringify({ key: "sk-abc123" }))} />
     );
 
     fireEvent.click(screen.getByRole("button", { name: "raw" }));
-    expect(container.querySelector("pre")?.textContent).toBe('{"key":"••••"}');
+    expect(container.querySelector("pre")?.textContent).toBe('{"key":"sk-abc123"}');
     fireEvent.click(screen.getByRole("button", { name: "formatted" }));
 
-    fireEvent.click(screen.getByRole("button", { name: "showSecrets" }));
     expect(container.textContent).toContain("sk-abc123");
     expect(container.querySelector('[data-tone="redacted"]')).toBeNull();
   });

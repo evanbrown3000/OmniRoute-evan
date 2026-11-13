@@ -57,15 +57,13 @@ test("push does not override an existing contextKey", () => {
   assert.equal(got!.contextKey, "preexisting1");
 });
 
-test("push truncates large requestBody with marker", () => {
-  // 1 KiB so cap is hit reliably; override env via fresh buffer w/ explicit byte cap
+test("push preserves the complete requestBody", () => {
   const big = "a".repeat(3000);
-  const buf = new TrafficBuffer(10, 1024); // 1 KiB max body
+  const buf = new TrafficBuffer(10, 1024); // legacy argument does not modify capture data
   buf.push(makeReq({ id: "r1", requestBody: big }));
   const got = buf.get("r1");
   assert.ok(got);
-  assert.ok(got.requestBody!.length > 1024); // marker increases length slightly
-  assert.match(got.requestBody!, /truncated for performance/);
+  assert.equal(got.requestBody, big);
 });
 
 test("push rotates oldest when over maxSize", () => {
@@ -195,10 +193,10 @@ test("broadcasts new event with the pushed request", () => {
   }
 });
 
-test("body cap applies to responseBody as well", () => {
+test("responseBody is also preserved whole", () => {
   const buf = new TrafficBuffer(5, 100);
   const r = makeReq({ id: "r", responseBody: "x".repeat(500) });
   buf.push(r);
   const got = buf.get("r");
-  assert.match(got!.responseBody!, /truncated for performance/);
+  assert.equal(got!.responseBody, "x".repeat(500));
 });

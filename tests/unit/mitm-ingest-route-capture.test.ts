@@ -2,15 +2,15 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 // The internal ingest endpoint receives raw bodies/headers from the standalone
-// proxy (server.cjs) over the token-gated loopback. It MUST mask secrets before
-// the entry enters the traffic buffer (Hard Rule #12). The token must be set
+// proxy (server.cjs) over the token-gated loopback. Original credentials must
+// survive in the capture. The token must be set
 // BEFORE the route module is first imported so getIngestToken() caches it.
 const INGEST_TOKEN = "test-ingest-token-1234567890";
 process.env.INSPECTOR_INTERNAL_INGEST_TOKEN = INGEST_TOKEN;
 
 const INGEST_URL = "http://localhost:20128/api/tools/traffic-inspector/internal/ingest";
 
-test("ingest masks bearer tokens / secrets before they enter the buffer", async () => {
+test("ingest preserves bearer tokens and original bodies", async () => {
   const { POST } = await import("@/app/api/tools/traffic-inspector/internal/ingest/route");
   const { globalTrafficBuffer } = await import("@/mitm/inspector/buffer");
   globalTrafficBuffer.clear();
@@ -53,9 +53,11 @@ test("ingest masks bearer tokens / secrets before they enter the buffer", async 
   // The captured entry must be present (source/model preserved)...
   assert.equal(list[0].source, "agent-bridge");
   assert.equal(list[0].mappedModel, "glm-5.2");
-  // ...but the raw secret must NOT survive anywhere in the stored entry.
+  // The complete captured header and body survive unchanged.
   const stored = JSON.stringify(list[0]);
-  assert.ok(!stored.includes(SECRET), "bearer secret must be masked out of the buffered entry");
+  assert.ok(stored.includes(SECRET));
+  assert.equal(list[0].requestHeaders.authorization, entry.requestHeaders.authorization);
+  assert.equal(list[0].requestBody, entry.requestBody);
 
   globalTrafficBuffer.clear();
 });
